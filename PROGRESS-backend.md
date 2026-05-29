@@ -14,7 +14,8 @@
 | BE-2 | Manajemen Grup | `[x]` |
 | BE-3 | Tracking Pembayaran | `[x]` |
 | BE-4 | Sistem Undian | `[x]` |
-| BE-5 | Tanggal & Swap | `[ ]` |
+| BE-5 | Tanggal & Swap | `[x]` |
+| BE-5.5 | Stream.io Chat | `[ ]` |
 | BE-6 | Notifikasi | `[ ]` |
 | BE-7 | Admin Dashboard | `[ ]` |
 | BE-8 | Privacy & Beta Prep | `[ ]` |
@@ -187,6 +188,29 @@
 > GET /api/swaps/my dan /api/swaps/group/:groupId WAJIB didaftarkan sebelum /:id agar tidak tertangkap sebagai param.
 > approveSwap melakukan dua UPDATE terpisah saat swap urutan — tidak ada atomic swap di SQL karena tidak ada unique constraint konflik (dua user, dua row berbeda).
 > jatuh_tempo dihitung dari tanggal_pelaksanaan - 3 hari via JS Date arithmetic, disimpan sebagai YYYY-MM-DD string.
+
+---
+
+## BE-5.5 — Stream.io Chat
+
+```
+[ ] npm install stream-chat
+[ ] src/services/streamio.ts (full):
+    [ ] generateUserToken()
+    [ ] createGroupChannel()
+    [ ] addMemberToChannel()
+    [ ] removeMemberFromChannel()
+    [ ] sendSystemMessage() — implementasi nyata (bukan logger.info)
+[ ] Retrofit src/routes/groups.ts:
+    [ ] POST /api/groups → createGroupChannel setelah insert
+    [ ] POST /api/groups/join → addMemberToChannel setelah insert
+    [ ] DELETE /:id/leave → removeMemberFromChannel setelah delete
+[ ] GET /api/users/stream-token → generateUserToken
+[ ] Uji: channel terbuat di Stream.io dashboard
+```
+
+**Catatan:**
+> _(isi setelah sesi)_
 
 ---
 
