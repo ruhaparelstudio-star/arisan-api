@@ -1,0 +1,22 @@
+name: PR Check
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run type-check
+      - name: No console.log in src
+        run: |
+          if grep -r "console\.log" src/ --include="*.ts"; then
+            echo "ERROR: console.log ditemukan"
+            exit 1
+          fi
