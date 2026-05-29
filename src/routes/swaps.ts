@@ -1,0 +1,102 @@
+import { Hono } from 'hono';
+import { z } from 'zod';
+import { zValidator } from '@hono/zod-validator';
+import { jwtAuth } from '../middleware/auth';
+import { supabase } from '../db/supabase';
+import * as ss from '../services/swaps';
+
+type Variables = { userId: string };
+
+export const swapsRoute = new Hono<{ Variables: Variables }>();
+swapsRoute.use('*', jwtAuth);
+
+// GET /api/swaps/my — harus sebelum /:id agar tidak tertangkap sebagai param
+swapsRoute.get('/my', async (c) => {
+  const userId = c.get('userId');
+  const { data } = await supabase
+    .from('swap_requests')
+    .select('*')
+    .or(`requester_id.eq.${userId},target_id.eq.${userId}`)
+    .order('created_at', { ascending: false });
+  return c.json({ swaps: data ?? [] });
+});
+
+// GET /api/swaps/group/:groupId — harus sebelum /:id
+swapsRoute.get('/group/:groupId', async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('groupId');
+
+  const { data: group } = await supabase
+    .from('groups')
+    .select('ketua_id')
+    .eq('id', groupId)
+    .single();
+
+  if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
+  if (group.ketua_id !== userId)
+    return c.json({ error: 'Hanya ketua yang bisa melihat semua swap di grup' }, 403);
+
+  const { data } = await supabase
+    .from('swap_requests')
+    .select('*')
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: false });
+
+  return c.json({ swaps: data ?? [] });
+});
+
+// POST /api/swaps
+swapsRoute.post(
+  '/',
+  zValidator(
+    'json',
+    z.object({
+      target_id: z.string().uuid(),
+      group_id: z.string().uuid(),
+    })
+  ),
+  async (c) => {
+    const requesterId = c.get('userId');
+    const { target_id, group_id } = c.req.valid('json');
+
+    if (requesterId === target_id)
+      return c.json({ error: 'Kamu tidak bisa menukar giliran dengan dirimu sendiri' }, 400);
+
+    const result = await ss.createSwapRequest(requesterId, target_id, group_id);
+    if (result.error) return c.json({ error: result.error }, 400);
+
+    return c.json({ swap: result.swap }, 201);
+  }
+);
+
+// POST /api/swaps/:id/respond
+swapsRoute.post(
+  '/:id/respond',
+  zValidator('json', z.object({ response: z.enum(['accepted', 'rejected']) })),
+  async (c) => {
+    const targetId = c.get('userId');
+    const swapId = c.req.param('id');
+    const { response } = c.req.valid('json');
+
+    const result = await ss.respondSwap(swapId, targetId, response);
+    if (result.error) return c.json({ error: result.error }, 400);
+
+    return c.json({ status: result.status });
+  }
+);
+
+// POST /api/swaps/:id/approve
+swapsRoute.post(
+  '/:id/approve',
+  zValidator('json', z.object({ decision: z.enum(['approved', 'ketua_rejected']) })),
+  async (c) => {
+    const ketuaId = c.get('userId');
+    const swapId = c.req.param('id');
+    const { decision } = c.req.valid('json');
+
+    const result = await ss.approveSwap(swapId, ketuaId, decision);
+    if (result.error) return c.json({ error: result.error }, 400);
+
+    return c.json({ status: result.status });
+  }
+);

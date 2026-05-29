@@ -163,23 +163,30 @@
 ## BE-5 — Tanggal & Swap
 
 ```
-[ ] Route tanggal:
-    [ ] PUT /api/groups/:groupId/periods/:periodId/tanggal
-    [ ] Hitung jatuh_tempo otomatis H-3
-[ ] src/services/swaps.ts:
-    [ ] getUserSwapCount() — max 2x per grup
-    [ ] createSwapRequest()
-    [ ] respondSwap() — target terima/tolak
-    [ ] approveSwap() — ketua approve/reject, tukar urutan
-[ ] src/routes/swaps.ts:
-    [ ] POST /api/swaps
-    [ ] POST /api/swaps/:id/respond
-    [ ] POST /api/swaps/:id/approve
-[ ] Notif WA + push di setiap step
+[x] Route tanggal:
+    [x] PUT /api/groups/:groupId/periods/:periodId/tanggal
+    [x] Hitung jatuh_tempo otomatis H-3
+[x] src/services/swaps.ts:
+    [x] getUserSwapCount() — max 2x per grup
+    [x] createSwapRequest()
+    [x] respondSwap() — target terima/tolak
+    [x] approveSwap() — ketua approve/reject, tukar urutan
+[x] src/routes/swaps.ts:
+    [x] POST /api/swaps
+    [x] POST /api/swaps/:id/respond
+    [x] POST /api/swaps/:id/approve
+    [x] GET /api/swaps/group/:groupId (ketua)
+    [x] GET /api/swaps/my
+[x] Notif WA di setiap step (push: BE-6 — expo-server-sdk belum install)
+[x] src/services/notifications.ts — sendWA() stub untuk BE-5
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-5 selesai 2026-05-30. Type-check clean, ESLint clean.
+> notifications.ts dibuat minimal (WA-only via Fonnte) — BE-6 menambahkan sendExpoPush + sendWithDedup.
+> GET /api/swaps/my dan /api/swaps/group/:groupId WAJIB didaftarkan sebelum /:id agar tidak tertangkap sebagai param.
+> approveSwap melakukan dua UPDATE terpisah saat swap urutan — tidak ada atomic swap di SQL karena tidak ada unique constraint konflik (dua user, dua row berbeda).
+> jatuh_tempo dihitung dari tanggal_pelaksanaan - 3 hari via JS Date arithmetic, disimpan sebagai YYYY-MM-DD string.
 
 ---
 

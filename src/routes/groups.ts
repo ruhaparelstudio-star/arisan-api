@@ -156,6 +156,61 @@ groupsRoute.put(
   }
 );
 
+// PUT /api/groups/:groupId/periods/:periodId/tanggal
+groupsRoute.put(
+  '/:groupId/periods/:periodId/tanggal',
+  zValidator('json', z.object({ tanggal_pelaksanaan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  async (c) => {
+    const userId = c.get('userId');
+    const groupId = c.req.param('groupId');
+    const periodId = c.req.param('periodId');
+    const { tanggal_pelaksanaan } = c.req.valid('json');
+
+    const { data: group } = await supabase
+      .from('groups')
+      .select('ketua_id')
+      .eq('id', groupId)
+      .single();
+
+    if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
+    if (group.ketua_id !== userId)
+      return c.json({ error: 'Hanya ketua yang bisa mengatur tanggal pelaksanaan' }, 403);
+
+    const { data: period } = await supabase
+      .from('periods')
+      .select('id, status, tanggal_pelaksanaan')
+      .eq('id', periodId)
+      .eq('group_id', groupId)
+      .single();
+
+    if (!period) return c.json({ error: 'Periode tidak ditemukan' }, 404);
+    if (period.status === 'completed')
+      return c.json({ error: 'Tanggal tidak bisa diubah untuk periode yang sudah selesai' }, 400);
+
+    // jatuh_tempo = tanggal_pelaksanaan - 3 hari
+    const tanggal = new Date(tanggal_pelaksanaan);
+    const jatuhTempo = new Date(tanggal.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const jatuh_tempo = jatuhTempo.toISOString().split('T')[0];
+
+    const { error } = await supabase
+      .from('periods')
+      .update({ tanggal_pelaksanaan, jatuh_tempo })
+      .eq('id', periodId);
+
+    if (error) return c.json({ error: 'Gagal memperbarui tanggal pelaksanaan' }, 500);
+
+    const oldTanggal = period.tanggal_pelaksanaan ?? 'belum diset';
+    await gs.logActivity(
+      groupId,
+      userId,
+      'tanggal_updated',
+      `Tanggal pelaksanaan periode diubah: ${oldTanggal} → ${tanggal_pelaksanaan} (jatuh_tempo: ${jatuh_tempo})`
+    );
+
+    return c.json({ tanggal_pelaksanaan, jatuh_tempo });
+  }
+);
+
 // DELETE /api/groups/:id/leave — harus sebelum DELETE /:id
 groupsRoute.delete('/:id/leave', async (c) => {
   const userId = c.get('userId');

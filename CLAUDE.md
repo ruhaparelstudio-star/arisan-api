@@ -215,4 +215,11 @@ BE-4 (2026-05-30):
 - Fungsi PostgreSQL undian_random HARUS dibuat manual di Supabase SQL Editor sebelum mode random bisa dipakai (lihat komentar di services/undian.ts).
 - winners table: INSERT ONLY — tidak ada UPDATE/DELETE endpoint dibuat di seluruh BE-4.
 - broadcastUndianResult dan sendSystemMessage tidak pernah throw — error hanya di-log agar kegagalan Stream.io tidak menggagalkan undian.
+
+BE-5 (2026-05-30):
+- notifications.ts dibuat minimal dengan sendWA() saja — BE-6 akan menambahkan sendExpoPush() dan sendWithDedup().
+- GET routes di swapsRoute (/my dan /group/:groupId) WAJIB didaftarkan sebelum /:id route agar tidak tertangkap sebagai param.
+- approveSwap melakukan dua UPDATE terpisah untuk tukar urutan — tidak ada unique constraint yang konflik karena dua user adalah dua row terpisah di group_members.
+- jatuh_tempo = tanggal_pelaksanaan - 3 hari dihitung via JS Date arithmetic (toISOString().split('T')[0]) agar format YYYY-MM-DD konsisten.
+- Validasi "giliran belum berlangsung" mengecek apakah ada period dengan periode_ke = member.urutan dan status = 'completed' — jika ada, swap ditolak.
 ```
