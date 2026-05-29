@@ -156,4 +156,8 @@ BE-0 (2026-05-29): Stack selesai, health endpoint aktif.
 BE-1 (2026-05-30):
 - Hono context variables membutuhkan generik eksplisit: `new Hono<{ Variables: { userId: string; phone: string } }>()` di routes dan `createMiddleware<{ Variables: ... }>` di middleware — tanpa ini TypeScript error "Argument not assignable to type 'never'".
 - @hono/zod-validator otomatis return 400 + pesan error Zod jika validasi gagal.
+
+BE-2 (2026-05-30):
+- Urutan route registration kritis: POST /join dan DELETE /:id/leave WAJIB didaftarkan sebelum GET/DELETE /:id — Hono mencocokkan dari atas ke bawah, literal path menang atas param hanya jika dideklarasikan lebih dulu.
+- logActivity tidak boleh throw — dibungkus error log saja agar tidak menggagalkan transaksi utama.
 ```

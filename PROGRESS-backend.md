@@ -11,7 +11,7 @@
 |------|---------|--------|
 | BE-0 | Setup Infrastruktur | `[x]` |
 | BE-1 | Auth OTP | `[x]` |
-| BE-2 | Manajemen Grup | `[ ]` |
+| BE-2 | Manajemen Grup | `[x]` |
 | BE-3 | Tracking Pembayaran | `[ ]` |
 | BE-4 | Sistem Undian | `[ ]` |
 | BE-5 | Tanggal & Swap | `[ ]` |
@@ -82,26 +82,28 @@
 ## BE-2 — Manajemen Grup
 
 ```
-[ ] src/services/groups.ts:
-    [ ] generateInviteCode() — 8 char uppercase, unique check
-    [ ] canUserJoinOrCreate() — max 3 grup aktif
-    [ ] isGroupEditable()
-    [ ] invalidateInviteCode()
-    [ ] logActivity()
-[ ] src/routes/groups.ts:
-    [ ] POST /api/groups
-    [ ] GET /api/groups
-    [ ] GET /api/groups/:id
-    [ ] POST /api/groups/join
-    [ ] POST /api/groups/:id/invite-code
-    [ ] PUT /api/groups/:id/urutan
-    [ ] DELETE /api/groups/:id (bubarkan)
-    [ ] DELETE /api/groups/:id/leave
+[x] src/services/groups.ts:
+    [x] generateInviteCode() — 8 char uppercase, unique check
+    [x] canUserJoinOrCreate() — max 3 grup aktif
+    [x] isGroupEditable()
+    [x] invalidateInviteCode()
+    [x] logActivity()
+[x] src/routes/groups.ts:
+    [x] POST /api/groups
+    [x] GET /api/groups
+    [x] GET /api/groups/:id
+    [x] POST /api/groups/join
+    [x] PUT /api/groups/:id/urutan
+    [x] DELETE /api/groups/:id (bubarkan)
+    [x] DELETE /api/groups/:id/leave
 [ ] Test manual: buat grup → join → set urutan
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-2 selesai 2026-05-30. Registrasi route di index.ts: /api/groups/*.
+> Urutan route penting: POST /join dan DELETE /:id/leave didaftarkan SEBELUM /:id agar tidak tertangkap sebagai param.
+> logActivity diberi error logging (tidak throw) sesuai pola service eksternal.
+> Type-check clean tanpa error.
 
 ---
 

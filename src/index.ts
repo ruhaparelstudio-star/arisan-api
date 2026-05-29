@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { healthRoute } from './routes/health';
 import { authRoute } from './routes/auth';
 import { usersRoute } from './routes/users';
+import { groupsRoute } from './routes/groups';
 import { logger } from './utils/logger';
 
 const app = new Hono();
@@ -10,6 +11,7 @@ const app = new Hono();
 app.route('/health', healthRoute);
 app.route('/api/auth', authRoute);
 app.route('/api/users', usersRoute);
+app.route('/api/groups', groupsRoute);
 
 const port = parseInt(process.env.PORT ?? '3001');
 serve({ fetch: app.fetch, port }, () => {
