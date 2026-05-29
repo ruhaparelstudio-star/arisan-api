@@ -1,7 +1,7 @@
 name: Auto Format
 on:
   push:
-    branches-ignore: [main]
+    branches: ["feature/**"]
 jobs:
   format:
     runs-on: ubuntu-latest
