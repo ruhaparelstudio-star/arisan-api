@@ -220,22 +220,27 @@
 ## BE-6 — Notifikasi
 
 ```
-[ ] npm install: expo-server-sdk
-[ ] src/services/notifications.ts:
-    [ ] sendExpoPush()
-    [ ] sendWA() — Fonnte, tidak throw jika gagal
-    [ ] sendWithDedup() — cek notif_log sebelum kirim
-[ ] src/routes/cron.ts:
-    [ ] GET /api/cron/payment-reminder
-    [ ] GET /api/cron/pelaksanaan-reminder
-[ ] PUT /api/users/push-token — simpan Expo push token
-[ ] Setup cron: pg_cron ATAU GitHub Actions (sesuai BE-0)
-[ ] src/services/streamio.ts:
-    [ ] sendSystemMessage() — tidak throw jika gagal
+[x] npm install: expo-server-sdk
+[x] src/services/notifications.ts:
+    [x] sendExpoPush() — skip jika token tidak ada/invalid, tidak throw
+    [x] sendWA() — Fonnte, AbortController FONNTE_TIMEOUT_MS, tidak throw
+    [x] sendWithDedup() — insert notif_log (unique constraint), conflict = skip
+[x] src/routes/cron.ts:
+    [x] GET /api/cron/payment-reminder — X-Cron-Secret, query periods.jatuh_tempo
+    [x] GET /api/cron/pelaksanaan-reminder — X-Cron-Secret, 7 hari lagi
+[x] Daftarkan cronRoute di index.ts: app.route('/api/cron', cronRoute)
+[x] Type-check clean, ESLint clean
+[ ] PUT /api/users/push-token — sudah ada dari BE-1, tidak perlu diulang
+[ ] Setup cron: GitHub Actions (pg_cron tidak dikonfirmasi aktif)
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-6 selesai 2026-05-30. Type-check clean, ESLint clean.
+> sendWA() tetap memakai signature (userId, message) — konsisten dengan swaps.ts dari BE-5 (fetch phone dari DB internal).
+> sendWithDedup() memanggil sendExpoPush + sendWA secara serial; dedup via unique constraint notif_log(user_id, type, sent_date) — conflict = return early.
+> payment-reminder: query periods.jatuh_tempo terlebih dahulu (2 nilai: today + H+3), lalu join ke payments.period_id. Tidak pakai filter nested PostgREST karena lebih aman dengan 2 query terpisah.
+> pelaksanaan-reminder: query periods per tanggal, lalu loop group_members per group_id (N+1 acceptable untuk skala arisan kecil).
+> Cron schedule: perlu dikonfigurasi via GitHub Actions (lihat github-actions workflow) atau pg_cron jika sudah diaktifkan.
 
 ---
 

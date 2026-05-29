@@ -227,4 +227,11 @@ BE-5.5 (2026-05-30):
 - stream-chat SDK ChannelData tidak menyertakan custom fields (name, created_by_id) di default generics — diperlukan cast `as Record<string, unknown>` agar type-check lolos tanpa mengubah generic signature seluruh client.
 - Semua fungsi Stream tidak throw — kegagalan hanya di-log via logger.error.
 - sendSystemMessage sekarang benar-benar mengirim ke channel (bukan stub logger.info).
+
+BE-6 (2026-05-30):
+- sendWA() tetap memakai signature (userId, message) — fetch phone dari DB internal agar swaps.ts tidak perlu tahu nomor HP.
+- sendWithDedup() dedup via INSERT ke notif_log dengan UNIQUE(user_id, type, sent_date) — conflict error = skip (tidak throw).
+- expo-server-sdk: parameter `data` di sendPushNotificationsAsync harus bertipe `Record<string, unknown>`, bukan `object`.
+- payment-reminder cron: 2 query terpisah (periods → payments) lebih aman daripada nested PostgREST filter pada kolom join.
+- GitHub Actions cron (bukan pg_cron) yang dikonfirmasi untuk trigger endpoint ini.
 ```

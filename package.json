@@ -17,6 +17,7 @@
     "@hono/zod-validator": "^0.8.0",
     "@supabase/supabase-js": "^2.49.4",
     "@types/ws": "^8.18.1",
+    "expo-server-sdk": "^6.1.0",
     "hono": "^4.7.11",
     "jsonwebtoken": "^9.0.3",
     "stream-chat": "^9.44.2",
