@@ -26,18 +26,16 @@ export async function confirmPayment(periodId: string, memberId: string, confirm
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: 'Hanya ketua yang bisa konfirmasi pembayaran' };
 
-  await supabase
-    .from('payments')
-    .upsert(
-      {
-        period_id: periodId,
-        user_id: memberId,
-        status: 'confirmed',
-        confirmed_by: confirmedBy,
-        confirmed_at: new Date(),
-      },
-      { onConflict: 'period_id,user_id' }
-    );
+  await supabase.from('payments').upsert(
+    {
+      period_id: periodId,
+      user_id: memberId,
+      status: 'confirmed',
+      confirmed_by: confirmedBy,
+      confirmed_at: new Date(),
+    },
+    { onConflict: 'period_id,user_id' }
+  );
 
   return { success: true };
 }
@@ -63,18 +61,16 @@ export async function cancelConfirmPayment(
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: 'Hanya ketua yang bisa membatalkan konfirmasi' };
 
-  await supabase
-    .from('payments')
-    .upsert(
-      {
-        period_id: periodId,
-        user_id: memberId,
-        status: 'pending',
-        confirmed_by: null,
-        confirmed_at: null,
-      },
-      { onConflict: 'period_id,user_id' }
-    );
+  await supabase.from('payments').upsert(
+    {
+      period_id: periodId,
+      user_id: memberId,
+      status: 'pending',
+      confirmed_by: null,
+      confirmed_at: null,
+    },
+    { onConflict: 'period_id,user_id' }
+  );
 
   return { success: true };
 }
