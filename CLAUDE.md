@@ -109,10 +109,33 @@ Jika gagal → `logger.error`, jangan throw, jangan gagalkan transaksi utama.
 
 ---
 
+## GitHub Actions Workflows
+
+| File | Trigger | Fungsi |
+|------|---------|--------|
+| `ci.yml` | Push semua branch, PR ke main/develop | Lint, format check, type-check |
+| `auto-format.yml` | Push ke branch selain main | Auto-format + commit |
+| `pr-check.yml` | PR ke main | Lint, type-check, cek console.log |
+| `migrate.yml` | Push ke main (path: `supabase/migrations/**`), manual | `supabase link` + `supabase db push` |
+
+**Secrets yang dibutuhkan di GitHub:**
+- `SUPABASE_ACCESS_TOKEN` — dari supabase.com/dashboard/account/tokens
+- `SUPABASE_PROJECT_REF` — ID project (contoh: `vqjfvbvmavwqapsznycp`)
+- `SUPABASE_DB_PASSWORD` — dari Project Settings → Database
+
+**Catatan penting:**
+- `supabase/setup-cli@v1` masih Node.js 20 (dari pihak Supabase) — tunggu v2
+- `actions/checkout` dan `actions/setup-node` sudah di v5 (Node.js 24)
+- Migration baru: cukup buat file `supabase/migrations/00X_nama.sql`, push ke main → otomatis jalan
+- ESLint memakai flat config (`eslint.config.js`) — bukan `.eslintrc.json` (ESLint 10+)
+- Husky skip di Docker/production via `NODE_ENV !== production` check di `prepare` script
+
+---
+
 ## Referensi
 
 - Schema: `supabase/migrations/001_initial.sql`
-- Progress: `PROGRESS.md`
+- Progress: `PROGRESS-backend.md`
 - Dev guide: `../DEVELOPMENT_GUIDE.md`
 
 ---
