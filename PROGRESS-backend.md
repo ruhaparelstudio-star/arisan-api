@@ -27,10 +27,10 @@
 [x] Scaffold Hono project (Node 20, TypeScript)
 [x] Setup Docker + Dockerfile
 [x] Buat .env.example lengkap
-[ ] Koneksi Supabase berhasil (test query)
-[ ] Jalankan 001_initial.sql — semua tabel terbuat
-[ ] Aktifkan Supabase Realtime: payments, winners, swap_requests, periods
-[ ] Verifikasi pg_cron
+[x] Koneksi Supabase berhasil (test query)
+[x] Jalankan 001_initial.sql — semua tabel terbuat
+[x] Aktifkan Supabase Realtime: payments, winners, swap_requests, periods
+[x] Verifikasi pg_cron
 [x] Health check endpoint: GET /health → { status: "ok" }
 [x] Setup middleware skeleton: jwtAuth, checkPlan (kosong)
 [x] Setup logger.ts (pengganti console.log)
@@ -39,7 +39,7 @@
 ```
 
 **pg_cron status:**
-> `[ ]` Aktif — pakai Supabase cron
+> `[x]` Aktif — pakai Supabase cron
 > `[ ]` Tidak aktif — pakai GitHub Actions cron
 
 **Catatan:**
