@@ -154,10 +154,20 @@ ALTER TABLE swap_requests ENABLE ROW LEVEL SECURITY;
 -- =====================
 -- REALTIME
 -- =====================
-ALTER PUBLICATION supabase_realtime ADD TABLE payments;
-ALTER PUBLICATION supabase_realtime ADD TABLE winners;
-ALTER PUBLICATION supabase_realtime ADD TABLE swap_requests;
-ALTER PUBLICATION supabase_realtime ADD TABLE periods;
+DO $$
+DECLARE
+  t TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['payments','winners','swap_requests','periods'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE %I', t);
+    END IF;
+  END LOOP;
+END
+$$;
 
 -- =====================
 -- CEK pg_cron
