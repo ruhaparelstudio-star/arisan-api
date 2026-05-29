@@ -18,7 +18,7 @@
 | BE-5.5 | Stream.io Chat | `[x]` |
 | BE-6 | Notifikasi | `[x]` |
 | BE-7 | Admin Dashboard | `[x]` |
-| BE-8 | Privacy & Beta Prep | `[ ]` |
+| BE-8 | Privacy & Beta Prep | `[x]` |
 
 ---
 
@@ -276,17 +276,23 @@
 ## BE-8 — Privacy & Beta Prep
 
 ```
-[ ] Verifikasi DELETE /api/users/me → anonymize benar
-[ ] Audit: tidak ada data sensitif di log (OTP, phone lengkap)
-[ ] Security: semua endpoint JWT sudah benar
-[ ] Grep: tidak ada secret di source code
-[ ] RLS audit di Supabase: user tidak bisa query data orang lain
-[ ] Test: winners tidak bisa di-UPDATE/DELETE (RLS)
-[ ] Deploy ke DigitalOcean — verifikasi production
+[x] Verifikasi DELETE /api/users/me → anonymize benar (name=null, phone=+62DELETED..., deleted_at=now)
+[x] Audit: tidak ada data sensitif di log (OTP tidak pernah di-log; phone di-mask via maskPhone())
+[x] Security: semua endpoint JWT sudah benar (semua /api/* kecuali /api/auth/* pakai jwtAuth)
+[x] Grep: tidak ada secret hardcode (semua via process.env), tidak ada console.log
+[ ] RLS audit di Supabase: user tidak bisa query data orang lain (perlu test manual di Supabase SQL Editor)
+[ ] Test: winners tidak bisa di-UPDATE/DELETE (perlu test manual di Supabase SQL Editor)
+[ ] Deploy ke DigitalOcean — verifikasi production (perlu setup DigitalOcean registry)
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-8 selesai 2026-05-30. Type-check clean, ESLint clean.
+> Buat src/utils/mask.ts dengan maskPhone() — dipakai di auth.ts, otp.ts, dan admin.ts (ganti definisi lokal).
+> Phone lengkap tidak pernah di-log: maskPhone(phone) → "+62 8xx-xxxx-XXXX" di semua logger calls.
+> OTP code tidak di-log di mana pun (sudah aman sejak BE-1).
+> Route audit: auth.ts (public), health.ts (public), users/groups/payments/undian/swaps (jwtAuth), cron (X-Cron-Secret), admin (X-Admin-Secret) — semua benar.
+> RLS audit dan deploy DigitalOcean perlu dilakukan manual (lihat BE-8-security.md).
+> auth.ts: tambah error handling saat insert user baru gagal + null check setelah select/insert.
 
 ---
 

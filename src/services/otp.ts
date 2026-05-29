@@ -1,5 +1,6 @@
 import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
+import { maskPhone } from '../utils/mask';
 import { randomInt } from 'crypto';
 
 const FONNTE_TOKEN = process.env.FONNTE_TOKEN!;
@@ -101,7 +102,7 @@ export async function sendViaFonnte(
   } catch (err: unknown) {
     const msg = err instanceof Error && err.name === 'AbortError' ? 'Timeout' : String(err);
     await supabase.from('otp_delivery_log').insert({ phone, status: 'failed', error_message: msg });
-    logger.error('Fonnte send failed', { phone, error: msg });
+    logger.error('Fonnte send failed', { phone: maskPhone(phone), error: msg });
     return { success: false, error: 'Gagal mengirim OTP. Coba lagi dalam 30 detik.' };
   } finally {
     clearTimeout(timer);

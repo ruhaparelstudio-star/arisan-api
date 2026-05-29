@@ -5,6 +5,7 @@ import { sign } from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
 import * as otpService from '../services/otp';
 import { logger } from '../utils/logger';
+import { maskPhone } from '../utils/mask';
 
 export const authRoute = new Hono();
 
@@ -33,7 +34,7 @@ authRoute.post('/send-otp', zValidator('json', sendSchema), async (c) => {
     return c.json({ error: result.error }, 503);
   }
 
-  logger.info('OTP sent', { phone });
+  logger.info('OTP sent', { phone: maskPhone(phone) });
   return c.json({ message: 'OTP berhasil dikirim ke WhatsApp kamu' });
 });
 
@@ -45,18 +46,35 @@ authRoute.post('/verify-otp', zValidator('json', verifySchema), async (c) => {
     return c.json({ error: verification.reason }, 400);
   }
 
-  const { data: existing } = await supabase.from('users').select('*').eq('phone', phone).single();
+  const { data: existing, error: selectError } = await supabase
+    .from('users')
+    .select('*')
+    .eq('phone', phone)
+    .single();
 
   let user = existing;
   if (!user) {
-    const { data: newUser } = await supabase.from('users').insert({ phone }).select().single();
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert({ phone })
+      .select()
+      .single();
+    if (insertError) {
+      logger.error('Gagal membuat user baru', { phone: maskPhone(phone), error: insertError });
+      return c.json({ error: 'Gagal membuat akun. Coba lagi.' }, 500);
+    }
     user = newUser;
   }
 
-  const token = sign({ userId: user!.id, phone: user!.phone }, process.env.JWT_SECRET!, {
+  if (!user) {
+    logger.error('User null setelah select/insert', { phone: maskPhone(phone), selectError });
+    return c.json({ error: 'Gagal memuat akun. Coba lagi.' }, 500);
+  }
+
+  const token = sign({ userId: user.id, phone: user.phone }, process.env.JWT_SECRET!, {
     expiresIn: '30d',
   });
 
-  logger.info('User logged in', { userId: user!.id });
-  return c.json({ token, user: { id: user!.id, phone: user!.phone, name: user!.name } });
+  logger.info('User logged in', { userId: user.id });
+  return c.json({ token, user: { id: user.id, phone: user.phone, name: user.name } });
 });

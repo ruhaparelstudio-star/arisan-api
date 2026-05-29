@@ -242,4 +242,12 @@ BE-7 (2026-05-30):
 - system-health Stream: queryChannels({}, {}, { limit: 1 }) di try/catch — kegagalan = stream: 'error', tidak throw.
 - cron/trigger/:type: internal fetch ke localhost endpoint dengan X-Cron-Secret — tidak ada duplikasi logik cron.
 - Supabase nested join (users di group_members) bertipe unknown di SDK — perlu cast `as unknown as` sebelum target interface.
+
+BE-8 (2026-05-30):
+- maskPhone() dipindah ke src/utils/mask.ts (shared utility) — admin.ts tidak lagi punya definisi lokal.
+- Phone di-mask di SEMUA logger calls (auth.ts, otp.ts) — tidak ada phone lengkap di log production.
+- OTP code tidak pernah di-log di mana pun (sudah aman sejak BE-1, dikonfirmasi di BE-8 audit).
+- Route auth audit: auth.ts (public), health.ts (public), users/groups/payments/undian/swaps (jwtAuth), cron (X-Cron-Secret), admin (X-Admin-Secret).
+- auth.ts: tambah error handling null-safe untuk insert user baru (kasus Supabase gagal insert).
+- RLS audit + DigitalOcean deploy: perlu dilakukan manual (lihat BE-8-security.md untuk langkah-langkah).
 ```
