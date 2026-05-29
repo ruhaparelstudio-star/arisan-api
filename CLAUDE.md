@@ -234,4 +234,12 @@ BE-6 (2026-05-30):
 - expo-server-sdk: parameter `data` di sendPushNotificationsAsync harus bertipe `Record<string, unknown>`, bukan `object`.
 - payment-reminder cron: 2 query terpisah (periods → payments) lebih aman daripada nested PostgREST filter pada kolom join.
 - GitHub Actions cron (bukan pg_cron) yang dikonfirmasi untuk trigger endpoint ini.
+
+BE-7 (2026-05-30):
+- maskPhone(phone) helper: `+62 8xx-xxxx-${phone.slice(-4)}` — diterapkan konsisten di semua response admin yang menyertakan nomor HP.
+- DELETE /admin/users/:id = anonymize (bukan hard delete): name=null, phone=+62DELETED+8-char-id, deleted_at=now — konsisten dengan DELETE /api/users/me dari BE-1.
+- system-health Supabase: try rpc('health_check_select1') → fallback ke count query tabel users. Jika kedua gagal → supabase: 'error'.
+- system-health Stream: queryChannels({}, {}, { limit: 1 }) di try/catch — kegagalan = stream: 'error', tidak throw.
+- cron/trigger/:type: internal fetch ke localhost endpoint dengan X-Cron-Secret — tidak ada duplikasi logik cron.
+- Supabase nested join (users di group_members) bertipe unknown di SDK — perlu cast `as unknown as` sebelum target interface.
 ```
