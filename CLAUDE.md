@@ -140,9 +140,18 @@ Jika gagal → `logger.error`, jangan throw, jangan gagalkan transaksi utama.
 
 ---
 
-## Workflow Wajib — Akhir Setiap Sesi
+## Workflow Wajib — Setiap Sesi BE-X
 
-**Setelah implementasi setiap BE-X selesai, WAJIB jalankan git commit sebelum lapor ke user:**
+### Awal Sesi — Buat Branch dari develop
+
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/be-X-<nama>
+# contoh: feature/be-4-undian
+```
+
+### Selama Sesi — Commit Per Milestone
 
 ```bash
 # Stage file yang relevan (jangan pakai git add -A)
@@ -153,9 +162,25 @@ git commit -m "feat(be): <deskripsi singkat>"
 ```
 
 Format commit message: `feat(be): <feature> <ringkasan>`
-Contoh: `feat(be): manajemen grup CRUD + invite code + set urutan`
+Contoh: `feat(be): sistem undian fixed + random + manual`
 
 Jangan commit: file `.env`, file spec `BE-*.md`, `node_modules/`, `dist/`.
+
+### Akhir Sesi — Merge ke develop & Hapus Branch
+
+```bash
+git checkout develop
+git merge feature/be-X-<nama> --no-ff
+git push origin develop
+git branch -D feature/be-X-<nama>
+git push origin --delete feature/be-X-<nama>
+```
+
+**Aturan branch:**
+- Satu branch per sesi BE-X
+- Branch selalu dibuat dari `develop`, bukan dari branch lain
+- Branch dihapus (lokal + remote) setelah merge ke `develop`
+- Tidak ada branch feature yang hidup lebih dari satu sesi
 
 ---
 
