@@ -14,8 +14,11 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
+    "@hono/zod-validator": "^0.8.0",
     "@supabase/supabase-js": "^2.49.4",
-    "hono": "^4.7.11"
+    "hono": "^4.7.11",
+    "jsonwebtoken": "^9.0.3",
+    "zod": "^4.4.3"
   },
   "lint-staged": {
     "src/**/*.ts": [
@@ -24,6 +27,7 @@
     ]
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
     "@typescript-eslint/parser": "^8.60.0",

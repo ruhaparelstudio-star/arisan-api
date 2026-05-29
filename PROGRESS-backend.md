@@ -10,7 +10,7 @@
 | Sesi | Feature | Status |
 |------|---------|--------|
 | BE-0 | Setup Infrastruktur | `[x]` |
-| BE-1 | Auth OTP | `[ ]` |
+| BE-1 | Auth OTP | `[x]` |
 | BE-2 | Manajemen Grup | `[ ]` |
 | BE-3 | Tracking Pembayaran | `[ ]` |
 | BE-4 | Sistem Undian | `[ ]` |
@@ -53,26 +53,29 @@
 ## BE-1 — Auth OTP
 
 ```
-[ ] npm install: zod, jsonwebtoken, @types/jsonwebtoken
-[ ] src/services/otp.ts:
-    [ ] generateOTP() — crypto.randomInt 6 digit
-    [ ] checkRateLimit() — max 5x/jam per nomor
-    [ ] saveOTP() — simpan ke otp_codes, TTL 5 menit
-    [ ] verifyOTP() — cek expires_at, used_at
-    [ ] sendViaFonnte() — AbortController FONNTE_TIMEOUT_MS
-[ ] src/routes/auth.ts:
-    [ ] POST /api/auth/send-otp (Zod validasi +62xxx)
-    [ ] POST /api/auth/verify-otp (return JWT)
-[ ] src/middleware/auth.ts — jwtAuth middleware
-[ ] src/routes/users.ts:
-    [ ] GET /api/users/me
-    [ ] PUT /api/users/me
-    [ ] DELETE /api/users/me (anonymize)
+[x] npm install: zod, jsonwebtoken, @types/jsonwebtoken
+[x] src/services/otp.ts:
+    [x] generateOTP() — crypto.randomInt 6 digit
+    [x] checkRateLimit() — max 5x/jam per nomor
+    [x] saveOTP() — simpan ke otp_codes, TTL 5 menit
+    [x] verifyOTP() — cek expires_at, used_at
+    [x] sendViaFonnte() — AbortController FONNTE_TIMEOUT_MS
+[x] src/routes/auth.ts:
+    [x] POST /api/auth/send-otp (Zod validasi +62xxx)
+    [x] POST /api/auth/verify-otp (return JWT)
+[x] src/middleware/auth.ts — jwtAuth middleware
+[x] src/routes/users.ts:
+    [x] GET /api/users/me
+    [x] PUT /api/users/me
+    [x] DELETE /api/users/me (anonymize)
+    [x] PUT /api/users/push-token
 [ ] Test manual: send-otp → verify-otp → /me
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-1 selesai 2026-05-30. Tambah zod 3.x, @hono/zod-validator, jsonwebtoken.
+> Fix TypeScript: Hono context variables butuh generik `<{ Variables: { userId, phone } }>` di route dan `createMiddleware<{ Variables: ... }>` di middleware.
+> Type-check clean. Routes terdaftar di index.ts: /api/auth/*, /api/users/*.
 
 ---
 

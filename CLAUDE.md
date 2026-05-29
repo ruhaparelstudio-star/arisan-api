@@ -151,5 +151,9 @@ STOP dan tanya. Jangan assume. Jangan karang implementasi.
 > Claude mengisi bagian ini setelah setiap sesi dengan keputusan teknis, workaround, dan hal penting.
 
 ```
-[belum ada catatan]
+BE-0 (2026-05-29): Stack selesai, health endpoint aktif.
+
+BE-1 (2026-05-30):
+- Hono context variables membutuhkan generik eksplisit: `new Hono<{ Variables: { userId: string; phone: string } }>()` di routes dan `createMiddleware<{ Variables: ... }>` di middleware — tanpa ini TypeScript error "Argument not assignable to type 'never'".
+- @hono/zod-validator otomatis return 400 + pesan error Zod jika validasi gagal.
 ```
