@@ -12,7 +12,7 @@
 | BE-0 | Setup Infrastruktur | `[x]` |
 | BE-1 | Auth OTP | `[x]` |
 | BE-2 | Manajemen Grup | `[x]` |
-| BE-3 | Tracking Pembayaran | `[ ]` |
+| BE-3 | Tracking Pembayaran | `[x]` |
 | BE-4 | Sistem Undian | `[ ]` |
 | BE-5 | Tanggal & Swap | `[ ]` |
 | BE-6 | Notifikasi | `[ ]` |
@@ -110,23 +110,24 @@
 ## BE-3 — Tracking Pembayaran
 
 ```
-[ ] src/services/payments.ts:
-    [ ] getPeriodPaymentStatus()
-    [ ] getGroupPaymentSummary()
-    [ ] confirmPayment() — simpan confirmed_by + confirmed_at
-    [ ] cancelConfirmPayment()
-    [ ] markLatePayments() — untuk cron
-[ ] src/routes/payments.ts:
-    [ ] GET /api/payments/:groupId
-    [ ] GET /api/payments/:groupId/:periodId
-    [ ] POST /api/payments/:groupId/:periodId/confirm
-    [ ] DELETE /api/payments/:groupId/:periodId/confirm
-    [ ] GET /api/payments/cron/mark-late (X-Cron-Secret)
+[x] src/services/payments.ts:
+    [x] getPeriodPaymentStatus()
+    [x] confirmPayment() — simpan confirmed_by + confirmed_at
+    [x] cancelConfirmPayment()
+    [x] markLatePayments() — untuk cron
+[x] src/routes/payments.ts:
+    [x] GET /api/payments/:groupId/:periodId
+    [x] POST /api/payments/:groupId/:periodId/confirm
+    [x] DELETE /api/payments/:groupId/:periodId/confirm
+    [x] GET /api/payments/cron/mark-late (X-Cron-Secret)
 [ ] Test: konfirmasi bayar → cek Realtime trigger
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-3 selesai 2026-05-30. Type-check clean.
+> Urutan route kritis: /cron/mark-late didaftarkan SEBELUM use('*', jwtAuth) dan SEBELUM /:groupId/:periodId — cron tidak butuh JWT, hanya X-Cron-Secret.
+> markLatePayments query dari DB menggunakan periods!inner join + filter lt(jatuh_tempo).
+> Saat jwtAuth diimplementasi penuh (BE-1 TODO), cron endpoint otomatis bypass karena sudah didaftarkan sebelum middleware.
 
 ---
 

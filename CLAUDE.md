@@ -179,4 +179,8 @@ BE-1 (2026-05-30):
 BE-2 (2026-05-30):
 - Urutan route registration kritis: POST /join dan DELETE /:id/leave WAJIB didaftarkan sebelum GET/DELETE /:id — Hono mencocokkan dari atas ke bawah, literal path menang atas param hanya jika dideklarasikan lebih dulu.
 - logActivity tidak boleh throw — dibungkus error log saja agar tidak menggagalkan transaksi utama.
+
+BE-3 (2026-05-30):
+- Cron endpoint /cron/mark-late WAJIB didaftarkan sebelum paymentsRoute.use('*', jwtAuth) dan sebelum /:groupId/:periodId — dua alasan: (1) agar tidak tertangkap sebagai param "cron"/"mark-late", (2) agar tidak membutuhkan JWT saat jwtAuth diimplementasi penuh.
+- markLatePayments menggunakan periods!inner join di Supabase query untuk filter jatuh_tempo tanpa N+1 query.
 ```
