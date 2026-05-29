@@ -16,8 +16,8 @@
 | BE-4 | Sistem Undian | `[x]` |
 | BE-5 | Tanggal & Swap | `[x]` |
 | BE-5.5 | Stream.io Chat | `[x]` |
-| BE-6 | Notifikasi | `[ ]` |
-| BE-7 | Admin Dashboard | `[ ]` |
+| BE-6 | Notifikasi | `[x]` |
+| BE-7 | Admin Dashboard | `[x]` |
 | BE-8 | Privacy & Beta Prep | `[ ]` |
 
 ---
@@ -247,22 +247,29 @@
 ## BE-7 — Admin Dashboard
 
 ```
-[ ] src/routes/admin.ts (semua dilindungi X-Admin-Secret):
-    [ ] GET /admin/stats/overview
-    [ ] GET /admin/users (dengan masked phone)
-    [ ] GET /admin/users/:id
-    [ ] POST /admin/users/:id/suspend
-    [ ] POST /admin/users/:id/unsuspend
-    [ ] DELETE /admin/users/:id (anonymize)
-    [ ] GET /admin/groups
-    [ ] GET /admin/groups/:id
-    [ ] GET /admin/otp-stats
-    [ ] GET /admin/system-health
-    [ ] POST /admin/cron/trigger/:type
+[x] src/routes/admin.ts (semua dilindungi X-Admin-Secret):
+    [x] GET /admin/stats/overview
+    [x] GET /admin/users (dengan masked phone, pagination)
+    [x] GET /admin/users/:id (detail + grup list + OTP delivery history)
+    [x] POST /admin/users/:id/suspend
+    [x] POST /admin/users/:id/unsuspend
+    [x] DELETE /admin/users/:id (anonymize UU PDP)
+    [x] GET /admin/groups (dengan pagination + filter status)
+    [x] GET /admin/groups/:id (detail + members masked + payment summary)
+    [x] GET /admin/otp-stats (daily 30 hari + rate-limited numbers)
+    [x] GET /admin/system-health (Supabase, API, Stream)
+    [x] POST /admin/cron/trigger/:type
+[x] Daftarkan adminRoute di index.ts: app.route('/admin', adminRoute)
+[x] Type-check clean, ESLint clean
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-7 selesai 2026-05-30. Type-check clean, ESLint clean.
+> maskPhone helper: `+62 8xx-xxxx-${phone.slice(-4)}` diterapkan di SEMUA response (list, detail, members, otp-stats rate-limited).
+> DELETE /admin/users/:id = anonymize (name=null, phone=+62DELETED+8char-id, deleted_at=now) — bukan hard delete, sesuai UU PDP.
+> system-health: coba rpc health_check_select1 → fallback ke query users.count. Stream: queryChannels limit 1 di try/catch.
+> cron/trigger/:type: internal HTTP call ke endpoint cron yang sudah ada dengan X-Cron-Secret header.
+> Supabase nested relation (users di group_members) memerlukan cast `as unknown as` karena tipe SDK menjadikannya `unknown`.
 
 ---
 
