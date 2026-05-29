@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { jwtAuth } from '../middleware/auth';
 import * as gs from '../services/groups';
+import {
+  createGroupChannel,
+  addMemberToChannel,
+  removeMemberFromChannel,
+} from '../services/streamio';
 import { supabase } from '../db/supabase';
 
 type Variables = { userId: string; phone: string };
@@ -43,6 +48,7 @@ groupsRoute.post('/', zValidator('json', createSchema), async (c) => {
   if (error || !group) return c.json({ error: 'Gagal membuat grup' }, 500);
 
   await supabase.from('group_members').insert({ group_id: group.id, user_id: userId, urutan: 1 });
+  await createGroupChannel(group.id, body.name, userId);
   await gs.logActivity(group.id, userId, 'group_created', `Grup "${body.name}" dibuat`);
 
   return c.json({ group }, 201);
@@ -96,6 +102,7 @@ groupsRoute.post(
 
     if ((count ?? 0) + 1 >= group.jumlah_periode) await gs.invalidateInviteCode(group.id);
 
+    await addMemberToChannel(group.id, userId);
     await gs.logActivity(group.id, userId, 'member_joined', `Anggota baru bergabung`);
     return c.json({ group, message: `Berhasil bergabung ke grup "${group.name}"` });
   }
@@ -227,6 +234,7 @@ groupsRoute.delete('/:id/leave', async (c) => {
     return c.json({ error: 'Tidak bisa keluar saat arisan sedang berjalan' }, 400);
 
   await supabase.from('group_members').delete().eq('group_id', groupId).eq('user_id', userId);
+  await removeMemberFromChannel(groupId, userId);
   await gs.logActivity(groupId, userId, 'member_left', 'Anggota keluar dari grup');
   return c.json({ message: `Kamu keluar dari grup "${group.name}"` });
 });

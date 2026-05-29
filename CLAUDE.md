@@ -222,4 +222,9 @@ BE-5 (2026-05-30):
 - approveSwap melakukan dua UPDATE terpisah untuk tukar urutan — tidak ada unique constraint yang konflik karena dua user adalah dua row terpisah di group_members.
 - jatuh_tempo = tanggal_pelaksanaan - 3 hari dihitung via JS Date arithmetic (toISOString().split('T')[0]) agar format YYYY-MM-DD konsisten.
 - Validasi "giliran belum berlangsung" mengecek apakah ada period dengan periode_ke = member.urutan dan status = 'completed' — jika ada, swap ditolak.
+
+BE-5.5 (2026-05-30):
+- stream-chat SDK ChannelData tidak menyertakan custom fields (name, created_by_id) di default generics — diperlukan cast `as Record<string, unknown>` agar type-check lolos tanpa mengubah generic signature seluruh client.
+- Semua fungsi Stream tidak throw — kegagalan hanya di-log via logger.error.
+- sendSystemMessage sekarang benar-benar mengirim ke channel (bukan stub logger.info).
 ```

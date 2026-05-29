@@ -15,7 +15,7 @@
 | BE-3 | Tracking Pembayaran | `[x]` |
 | BE-4 | Sistem Undian | `[x]` |
 | BE-5 | Tanggal & Swap | `[x]` |
-| BE-5.5 | Stream.io Chat | `[ ]` |
+| BE-5.5 | Stream.io Chat | `[x]` |
 | BE-6 | Notifikasi | `[ ]` |
 | BE-7 | Admin Dashboard | `[ ]` |
 | BE-8 | Privacy & Beta Prep | `[ ]` |
@@ -194,23 +194,26 @@
 ## BE-5.5 — Stream.io Chat
 
 ```
-[ ] npm install stream-chat
-[ ] src/services/streamio.ts (full):
-    [ ] generateUserToken()
-    [ ] createGroupChannel()
-    [ ] addMemberToChannel()
-    [ ] removeMemberFromChannel()
-    [ ] sendSystemMessage() — implementasi nyata (bukan logger.info)
-[ ] Retrofit src/routes/groups.ts:
-    [ ] POST /api/groups → createGroupChannel setelah insert
-    [ ] POST /api/groups/join → addMemberToChannel setelah insert
-    [ ] DELETE /:id/leave → removeMemberFromChannel setelah delete
-[ ] GET /api/users/stream-token → generateUserToken
+[x] npm install stream-chat
+[x] src/services/streamio.ts (full):
+    [x] generateUserToken()
+    [x] createGroupChannel()
+    [x] addMemberToChannel()
+    [x] removeMemberFromChannel()
+    [x] sendSystemMessage() — implementasi nyata (bukan logger.info)
+[x] Retrofit src/routes/groups.ts:
+    [x] POST /api/groups → createGroupChannel setelah insert
+    [x] POST /api/groups/join → addMemberToChannel setelah insert
+    [x] DELETE /:id/leave → removeMemberFromChannel setelah delete
+[x] GET /api/users/stream-token → generateUserToken
 [ ] Uji: channel terbuat di Stream.io dashboard
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-5.5 selesai 2026-05-30. Type-check clean.
+> stream-chat SDK ChannelData tidak menyertakan custom fields (name, created_by_id) di default generics — diperlukan cast `as Record<string, unknown>` agar type-check lolos tanpa mengubah generic signature seluruh client.
+> Semua fungsi Stream tidak throw — kegagalan hanya di-log via logger.error agar tidak gagalkan operasi utama (grup, join, undian).
+> sendSystemMessage sekarang benar-benar mengirim ke Stream.io channel (bukan hanya logger.info seperti sebelumnya).
 
 ---
 
