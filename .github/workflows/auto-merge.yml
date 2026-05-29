@@ -1,0 +1,34 @@
+name: Auto Merge
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches:
+      - "feature/**"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Hanya jika CI sukses dan dipicu oleh pull_request (bukan push langsung)
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Auto merge PR ke develop
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch }}"
+          PR=$(gh pr list --head "$BRANCH" --base develop --state open --json number -q '.[0].number')
+          if [ -n "$PR" ] && [ "$PR" != "null" ]; then
+            echo "Auto-merging PR #$PR ($BRANCH → develop)"
+            gh pr merge "$PR" --squash --delete-branch
+          else
+            echo "Tidak ada PR terbuka untuk $BRANCH → develop, skip."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
