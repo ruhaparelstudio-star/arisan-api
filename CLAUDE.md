@@ -208,4 +208,11 @@ BE-2 (2026-05-30):
 BE-3 (2026-05-30):
 - Cron endpoint /cron/mark-late WAJIB didaftarkan sebelum paymentsRoute.use('*', jwtAuth) dan sebelum /:groupId/:periodId — dua alasan: (1) agar tidak tertangkap sebagai param "cron"/"mark-late", (2) agar tidak membutuhkan JWT saat jwtAuth diimplementasi penuh.
 - markLatePayments menggunakan periods!inner join di Supabase query untuk filter jatuh_tempo tanpa N+1 query.
+
+BE-4 (2026-05-30):
+- undianRoute didaftarkan dua kali di /api/groups (bersama groupsRoute) — Hono match keduanya secara berurutan, tidak ada konflik karena path pattern berbeda.
+- Supabase nested relation (`users(name)`) tidak bisa langsung di-cast ke `{ name: string }` — perlu `as unknown as ...` karena Supabase menginfer tipe sebagai array.
+- Fungsi PostgreSQL undian_random HARUS dibuat manual di Supabase SQL Editor sebelum mode random bisa dipakai (lihat komentar di services/undian.ts).
+- winners table: INSERT ONLY — tidak ada UPDATE/DELETE endpoint dibuat di seluruh BE-4.
+- broadcastUndianResult dan sendSystemMessage tidak pernah throw — error hanya di-log agar kegagalan Stream.io tidak menggagalkan undian.
 ```

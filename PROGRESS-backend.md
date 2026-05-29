@@ -13,7 +13,7 @@
 | BE-1 | Auth OTP | `[x]` |
 | BE-2 | Manajemen Grup | `[x]` |
 | BE-3 | Tracking Pembayaran | `[x]` |
-| BE-4 | Sistem Undian | `[ ]` |
+| BE-4 | Sistem Undian | `[x]` |
 | BE-5 | Tanggal & Swap | `[ ]` |
 | BE-6 | Notifikasi | `[ ]` |
 | BE-7 | Admin Dashboard | `[ ]` |
@@ -134,19 +134,29 @@
 ## BE-4 — Sistem Undian
 
 ```
-[ ] src/services/undian.ts:
-    [ ] undianFixed()
-    [ ] undianRandom() — PostgreSQL RANDOM() dalam transaction
-    [ ] undianManual()
-    [ ] broadcastUndianResult() — Stream.io + push notif
-[ ] src/routes/undian.ts:
-    [ ] POST /api/groups/:id/undian
-[ ] Verifikasi: tabel winners INSERT ONLY, tidak ada UPDATE/DELETE
-[ ] Test: ketiga mode undian
+[x] src/services/streamio.ts:
+    [x] sendSystemMessage() — tidak throw jika Stream.io gagal
+[x] src/services/undian.ts:
+    [x] undianFixed() — ambil anggota berdasarkan urutan = periodeKe
+    [x] undianRandom() — pakai PostgreSQL RANDOM() via RPC undian_random
+    [x] undianManual() — validasi di route, return user_id
+    [x] saveWinner() — INSERT ONLY, tidak ada UPDATE/DELETE
+    [x] broadcastUndianResult() — Stream.io, tidak throw jika gagal
+[x] src/routes/undian.ts:
+    [x] POST /api/groups/:id/undian — validasi ketua, periode aktif, belum ada winner
+[x] Daftarkan undianRoute di index.ts: app.route('/api/groups', undianRoute)
+[x] Verifikasi: tidak ada UPDATE/DELETE endpoint untuk tabel winners
+[x] Type-check clean, ESLint clean
+[ ] Test manual: ketiga mode undian
+[ ] Buat fungsi PostgreSQL undian_random di Supabase SQL Editor
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-4 selesai 2026-05-30. Type-check clean, ESLint clean.
+> undianRoute didaftarkan di /api/groups (bersama groupsRoute) — Hono mencoba semua route yang match prefix secara berurutan.
+> Supabase nested relation (users.name) bertipe `unknown` saat di-join — perlu cast via `unknown` dulu sebelum target type.
+> Fungsi PostgreSQL undian_random harus dibuat manual di Supabase SQL Editor (lihat komentar di undian.ts).
+> winners: INSERT ONLY — tidak ada endpoint UPDATE/DELETE dibuat.
 
 ---
 
