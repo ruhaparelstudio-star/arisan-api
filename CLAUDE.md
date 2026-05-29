@@ -140,6 +140,25 @@ Jika gagal → `logger.error`, jangan throw, jangan gagalkan transaksi utama.
 
 ---
 
+## Workflow Wajib — Akhir Setiap Sesi
+
+**Setelah implementasi setiap BE-X selesai, WAJIB jalankan git commit sebelum lapor ke user:**
+
+```bash
+# Stage file yang relevan (jangan pakai git add -A)
+git add src/routes/<feature>.ts src/services/<feature>.ts src/index.ts CLAUDE.md PROGRESS-backend.md
+
+# Commit dengan format konvensional
+git commit -m "feat(be): <deskripsi singkat>"
+```
+
+Format commit message: `feat(be): <feature> <ringkasan>`
+Contoh: `feat(be): manajemen grup CRUD + invite code + set urutan`
+
+Jangan commit: file `.env`, file spec `BE-*.md`, `node_modules/`, `dist/`.
+
+---
+
 ## Jika Ragu
 
 STOP dan tanya. Jangan assume. Jangan karang implementasi.
