@@ -1,0 +1,21 @@
+name: Cron — Notifikasi Reminder
+
+on:
+  schedule:
+    # 08:00 WIB = 01:00 UTC
+    - cron: '0 1 * * *'
+  workflow_dispatch: # manual trigger untuk testing
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Payment Reminder
+        run: |
+          curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/payment-reminder" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+
+      - name: Pelaksanaan Reminder
+        run: |
+          curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/pelaksanaan-reminder" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
