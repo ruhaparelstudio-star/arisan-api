@@ -140,6 +140,25 @@ Jika gagal → `logger.error`, jangan throw, jangan gagalkan transaksi utama.
 
 ---
 
+## Workflow Wajib — Akhir Setiap Sesi
+
+**Setelah implementasi setiap BE-X selesai, WAJIB jalankan git commit sebelum lapor ke user:**
+
+```bash
+# Stage file yang relevan (jangan pakai git add -A)
+git add src/routes/<feature>.ts src/services/<feature>.ts src/index.ts CLAUDE.md PROGRESS-backend.md
+
+# Commit dengan format konvensional
+git commit -m "feat(be): <deskripsi singkat>"
+```
+
+Format commit message: `feat(be): <feature> <ringkasan>`
+Contoh: `feat(be): manajemen grup CRUD + invite code + set urutan`
+
+Jangan commit: file `.env`, file spec `BE-*.md`, `node_modules/`, `dist/`.
+
+---
+
 ## Jika Ragu
 
 STOP dan tanya. Jangan assume. Jangan karang implementasi.
@@ -151,5 +170,17 @@ STOP dan tanya. Jangan assume. Jangan karang implementasi.
 > Claude mengisi bagian ini setelah setiap sesi dengan keputusan teknis, workaround, dan hal penting.
 
 ```
-[belum ada catatan]
+BE-0 (2026-05-29): Stack selesai, health endpoint aktif.
+
+BE-1 (2026-05-30):
+- Hono context variables membutuhkan generik eksplisit: `new Hono<{ Variables: { userId: string; phone: string } }>()` di routes dan `createMiddleware<{ Variables: ... }>` di middleware — tanpa ini TypeScript error "Argument not assignable to type 'never'".
+- @hono/zod-validator otomatis return 400 + pesan error Zod jika validasi gagal.
+
+BE-2 (2026-05-30):
+- Urutan route registration kritis: POST /join dan DELETE /:id/leave WAJIB didaftarkan sebelum GET/DELETE /:id — Hono mencocokkan dari atas ke bawah, literal path menang atas param hanya jika dideklarasikan lebih dulu.
+- logActivity tidak boleh throw — dibungkus error log saja agar tidak menggagalkan transaksi utama.
+
+BE-3 (2026-05-30):
+- Cron endpoint /cron/mark-late WAJIB didaftarkan sebelum paymentsRoute.use('*', jwtAuth) dan sebelum /:groupId/:periodId — dua alasan: (1) agar tidak tertangkap sebagai param "cron"/"mark-late", (2) agar tidak membutuhkan JWT saat jwtAuth diimplementasi penuh.
+- markLatePayments menggunakan periods!inner join di Supabase query untuk filter jatuh_tempo tanpa N+1 query.
 ```

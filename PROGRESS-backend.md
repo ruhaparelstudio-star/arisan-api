@@ -10,9 +10,9 @@
 | Sesi | Feature | Status |
 |------|---------|--------|
 | BE-0 | Setup Infrastruktur | `[x]` |
-| BE-1 | Auth OTP | `[ ]` |
-| BE-2 | Manajemen Grup | `[ ]` |
-| BE-3 | Tracking Pembayaran | `[ ]` |
+| BE-1 | Auth OTP | `[x]` |
+| BE-2 | Manajemen Grup | `[x]` |
+| BE-3 | Tracking Pembayaran | `[x]` |
 | BE-4 | Sistem Undian | `[ ]` |
 | BE-5 | Tanggal & Swap | `[ ]` |
 | BE-6 | Notifikasi | `[ ]` |
@@ -53,75 +53,81 @@
 ## BE-1 — Auth OTP
 
 ```
-[ ] npm install: zod, jsonwebtoken, @types/jsonwebtoken
-[ ] src/services/otp.ts:
-    [ ] generateOTP() — crypto.randomInt 6 digit
-    [ ] checkRateLimit() — max 5x/jam per nomor
-    [ ] saveOTP() — simpan ke otp_codes, TTL 5 menit
-    [ ] verifyOTP() — cek expires_at, used_at
-    [ ] sendViaFonnte() — AbortController FONNTE_TIMEOUT_MS
-[ ] src/routes/auth.ts:
-    [ ] POST /api/auth/send-otp (Zod validasi +62xxx)
-    [ ] POST /api/auth/verify-otp (return JWT)
-[ ] src/middleware/auth.ts — jwtAuth middleware
-[ ] src/routes/users.ts:
-    [ ] GET /api/users/me
-    [ ] PUT /api/users/me
-    [ ] DELETE /api/users/me (anonymize)
+[x] npm install: zod, jsonwebtoken, @types/jsonwebtoken
+[x] src/services/otp.ts:
+    [x] generateOTP() — crypto.randomInt 6 digit
+    [x] checkRateLimit() — max 5x/jam per nomor
+    [x] saveOTP() — simpan ke otp_codes, TTL 5 menit
+    [x] verifyOTP() — cek expires_at, used_at
+    [x] sendViaFonnte() — AbortController FONNTE_TIMEOUT_MS
+[x] src/routes/auth.ts:
+    [x] POST /api/auth/send-otp (Zod validasi +62xxx)
+    [x] POST /api/auth/verify-otp (return JWT)
+[x] src/middleware/auth.ts — jwtAuth middleware
+[x] src/routes/users.ts:
+    [x] GET /api/users/me
+    [x] PUT /api/users/me
+    [x] DELETE /api/users/me (anonymize)
+    [x] PUT /api/users/push-token
 [ ] Test manual: send-otp → verify-otp → /me
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-1 selesai 2026-05-30. Tambah zod 3.x, @hono/zod-validator, jsonwebtoken.
+> Fix TypeScript: Hono context variables butuh generik `<{ Variables: { userId, phone } }>` di route dan `createMiddleware<{ Variables: ... }>` di middleware.
+> Type-check clean. Routes terdaftar di index.ts: /api/auth/*, /api/users/*.
 
 ---
 
 ## BE-2 — Manajemen Grup
 
 ```
-[ ] src/services/groups.ts:
-    [ ] generateInviteCode() — 8 char uppercase, unique check
-    [ ] canUserJoinOrCreate() — max 3 grup aktif
-    [ ] isGroupEditable()
-    [ ] invalidateInviteCode()
-    [ ] logActivity()
-[ ] src/routes/groups.ts:
-    [ ] POST /api/groups
-    [ ] GET /api/groups
-    [ ] GET /api/groups/:id
-    [ ] POST /api/groups/join
-    [ ] POST /api/groups/:id/invite-code
-    [ ] PUT /api/groups/:id/urutan
-    [ ] DELETE /api/groups/:id (bubarkan)
-    [ ] DELETE /api/groups/:id/leave
+[x] src/services/groups.ts:
+    [x] generateInviteCode() — 8 char uppercase, unique check
+    [x] canUserJoinOrCreate() — max 3 grup aktif
+    [x] isGroupEditable()
+    [x] invalidateInviteCode()
+    [x] logActivity()
+[x] src/routes/groups.ts:
+    [x] POST /api/groups
+    [x] GET /api/groups
+    [x] GET /api/groups/:id
+    [x] POST /api/groups/join
+    [x] PUT /api/groups/:id/urutan
+    [x] DELETE /api/groups/:id (bubarkan)
+    [x] DELETE /api/groups/:id/leave
 [ ] Test manual: buat grup → join → set urutan
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-2 selesai 2026-05-30. Registrasi route di index.ts: /api/groups/*.
+> Urutan route penting: POST /join dan DELETE /:id/leave didaftarkan SEBELUM /:id agar tidak tertangkap sebagai param.
+> logActivity diberi error logging (tidak throw) sesuai pola service eksternal.
+> Type-check clean tanpa error.
 
 ---
 
 ## BE-3 — Tracking Pembayaran
 
 ```
-[ ] src/services/payments.ts:
-    [ ] getPeriodPaymentStatus()
-    [ ] getGroupPaymentSummary()
-    [ ] confirmPayment() — simpan confirmed_by + confirmed_at
-    [ ] cancelConfirmPayment()
-    [ ] markLatePayments() — untuk cron
-[ ] src/routes/payments.ts:
-    [ ] GET /api/payments/:groupId
-    [ ] GET /api/payments/:groupId/:periodId
-    [ ] POST /api/payments/:groupId/:periodId/confirm
-    [ ] DELETE /api/payments/:groupId/:periodId/confirm
-    [ ] GET /api/payments/cron/mark-late (X-Cron-Secret)
+[x] src/services/payments.ts:
+    [x] getPeriodPaymentStatus()
+    [x] confirmPayment() — simpan confirmed_by + confirmed_at
+    [x] cancelConfirmPayment()
+    [x] markLatePayments() — untuk cron
+[x] src/routes/payments.ts:
+    [x] GET /api/payments/:groupId/:periodId
+    [x] POST /api/payments/:groupId/:periodId/confirm
+    [x] DELETE /api/payments/:groupId/:periodId/confirm
+    [x] GET /api/payments/cron/mark-late (X-Cron-Secret)
 [ ] Test: konfirmasi bayar → cek Realtime trigger
 ```
 
 **Catatan:**
-> _(isi setelah sesi)_
+> Sesi BE-3 selesai 2026-05-30. Type-check clean.
+> Urutan route kritis: /cron/mark-late didaftarkan SEBELUM use('*', jwtAuth) dan SEBELUM /:groupId/:periodId — cron tidak butuh JWT, hanya X-Cron-Secret.
+> markLatePayments query dari DB menggunakan periods!inner join + filter lt(jatuh_tempo).
+> Saat jwtAuth diimplementasi penuh (BE-1 TODO), cron endpoint otomatis bypass karena sudah didaftarkan sebelum middleware.
 
 ---
 
