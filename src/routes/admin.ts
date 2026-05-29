@@ -5,6 +5,7 @@ import { zValidator } from '@hono/zod-validator';
 import { StreamChat } from 'stream-chat';
 import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
+import { maskPhone } from '../utils/mask';
 
 export const adminRoute = new Hono();
 
@@ -16,10 +17,6 @@ const adminAuth = createMiddleware(async (c, next) => {
 });
 
 adminRoute.use('*', adminAuth);
-
-function maskPhone(phone: string): string {
-  return `+62 8xx-xxxx-${phone.slice(-4)}`;
-}
 
 // GET /admin/stats/overview
 adminRoute.get('/stats/overview', async (c) => {
