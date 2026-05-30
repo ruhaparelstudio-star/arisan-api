@@ -64,6 +64,35 @@ groupsRoute.get('/', async (c) => {
   return c.json({ groups: data?.map((d) => ({ ...d.groups, urutan_saya: d.urutan })) ?? [] });
 });
 
+// GET /api/groups/code/:code — preview grup sebelum join
+// Harus sebelum GET /:id agar tidak ditangkap sebagai param
+groupsRoute.get('/code/:code', async (c) => {
+  const { code } = c.req.param();
+  const { data: group } = await supabase
+    .from('groups')
+    .select(
+      'id, name, nominal, frekuensi, jumlah_periode, mode_undian, invite_code, status, ketua_id, created_at, group_members(count)'
+    )
+    .eq('invite_code', code.toUpperCase())
+    .single();
+  if (!group) return c.json({ error: 'Kode tidak valid' }, 404);
+  const counts = group.group_members as unknown as { count: number }[];
+  const memberCount = counts[0]?.count ?? 0;
+  return c.json({
+    id: group.id,
+    name: group.name,
+    nominal: group.nominal,
+    frekuensi: group.frekuensi,
+    jumlah_periode: group.jumlah_periode,
+    mode_undian: group.mode_undian,
+    invite_code: group.invite_code,
+    status: group.status,
+    ketua_id: group.ketua_id,
+    created_at: group.created_at,
+    member_count: memberCount,
+  });
+});
+
 // POST /api/groups/join — harus sebelum /:id agar tidak ditangkap sebagai param
 groupsRoute.post(
   '/join',
@@ -124,11 +153,23 @@ groupsRoute.get('/:id', async (c) => {
   const { data: group } = await supabase.from('groups').select('*').eq('id', groupId).single();
   const { data: members } = await supabase
     .from('group_members')
-    .select('urutan, users(id, name, phone)')
+    .select('user_id, urutan, users(id, name, phone)')
     .eq('group_id', groupId)
     .order('urutan');
 
-  return c.json({ group, members });
+  const { data: activePeriod } = await supabase
+    .from('periods')
+    .select('id, periode_ke')
+    .eq('group_id', groupId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  return c.json({
+    group,
+    members,
+    current_period_id: activePeriod?.id ?? null,
+    current_period: activePeriod?.periode_ke ?? null,
+  });
 });
 
 // PUT /api/groups/:id/urutan
@@ -162,6 +203,80 @@ groupsRoute.put(
     return c.json({ message: 'Urutan giliran berhasil diperbarui' });
   }
 );
+
+// POST /api/groups/:id/invite — regenerate kode invite (ketua only)
+groupsRoute.post('/:id/invite', async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id');
+  const { data: group } = await supabase
+    .from('groups')
+    .select('ketua_id')
+    .eq('id', groupId)
+    .single();
+  if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
+  if (group.ketua_id !== userId)
+    return c.json({ error: 'Hanya ketua yang bisa generate kode' }, 403);
+  const newCode = await gs.generateInviteCode();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await supabase
+    .from('groups')
+    .update({ invite_code: newCode, invite_code_expires_at: expiresAt })
+    .eq('id', groupId);
+  await gs.logActivity(groupId, userId, 'invite_regenerated', 'Kode invite diperbarui');
+  return c.json({ invite_code: newCode });
+});
+
+// GET /api/groups/:id/periods — list semua periode grup
+groupsRoute.get('/:id/periods', async (c) => {
+  const groupId = c.req.param('id');
+  const { data } = await supabase
+    .from('periods')
+    .select('*')
+    .eq('group_id', groupId)
+    .order('periode_ke');
+  return c.json({ periods: data ?? [] });
+});
+
+// GET /api/groups/:id/activity-log — riwayat aktivitas grup
+groupsRoute.get('/:id/activity-log', async (c) => {
+  const groupId = c.req.param('id');
+  const limit = parseInt(c.req.query('limit') ?? '30');
+  const offset = parseInt(c.req.query('offset') ?? '0');
+  const { data, count } = await supabase
+    .from('activity_log')
+    .select('*, actor:users!actor_id(name)', { count: 'exact' })
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  const ICON_MAP: Record<string, { icon: string; tone: string }> = {
+    group_created: { icon: 'users', tone: 'mint' },
+    member_joined: { icon: 'users', tone: 'mint' },
+    member_left: { icon: 'users', tone: 'neutral' },
+    payment_confirmed: { icon: 'checkCircle', tone: 'mint' },
+    payment_cancelled: { icon: 'checkCircle', tone: 'amber' },
+    undian: { icon: 'sparkles', tone: 'mint' },
+    urutan_updated: { icon: 'swap', tone: 'blue' },
+    group_disbanded: { icon: 'alert', tone: 'amber' },
+    invite_regenerated: { icon: 'share', tone: 'blue' },
+    tanggal_updated: { icon: 'checkCircle', tone: 'blue' },
+  };
+
+  type ActivityRow = { id: string; action: string; description: string; created_at: string };
+  const entries = (data ?? []).map((row) => {
+    const r = row as ActivityRow;
+    const meta = ICON_MAP[r.action] ?? { icon: 'checkCircle', tone: 'neutral' };
+    return {
+      id: r.id,
+      icon: meta.icon,
+      tone: meta.tone,
+      text: r.description,
+      created_at: r.created_at,
+    };
+  });
+
+  return c.json({ entries, has_more: (count ?? 0) > offset + limit });
+});
 
 // PUT /api/groups/:groupId/periods/:periodId/tanggal
 groupsRoute.put(
