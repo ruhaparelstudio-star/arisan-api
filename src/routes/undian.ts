@@ -12,6 +12,17 @@ export const undianRoute = new Hono<{ Variables: Variables }>();
 
 undianRoute.use('*', jwtAuth);
 
+// GET /api/groups/:id/winners — riwayat pemenang
+undianRoute.get('/:id/winners', async (c) => {
+  const groupId = c.req.param('id');
+  const { data } = await supabase
+    .from('winners')
+    .select('id, user_id, created_at, period_id, periods(periode_ke), users(name, phone)')
+    .eq('group_id', groupId)
+    .order('created_at', { ascending: false });
+  return c.json({ winners: data ?? [] });
+});
+
 const undianSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('fixed'), period_id: z.string().uuid() }),
   z.object({ mode: z.literal('random'), period_id: z.string().uuid() }),

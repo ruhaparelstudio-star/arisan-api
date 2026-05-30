@@ -10,12 +10,15 @@ type Variables = { userId: string };
 export const swapsRoute = new Hono<{ Variables: Variables }>();
 swapsRoute.use('*', jwtAuth);
 
+const SWAP_SELECT =
+  '*, requester:users!requester_id(name, phone), target:users!target_id(name, phone)';
+
 // GET /api/swaps/my — harus sebelum /:id agar tidak tertangkap sebagai param
 swapsRoute.get('/my', async (c) => {
   const userId = c.get('userId');
   const { data } = await supabase
     .from('swap_requests')
-    .select('*')
+    .select(SWAP_SELECT)
     .or(`requester_id.eq.${userId},target_id.eq.${userId}`)
     .order('created_at', { ascending: false });
   return c.json({ swaps: data ?? [] });
@@ -38,7 +41,7 @@ swapsRoute.get('/group/:groupId', async (c) => {
 
   const { data } = await supabase
     .from('swap_requests')
-    .select('*')
+    .select(SWAP_SELECT)
     .eq('group_id', groupId)
     .order('created_at', { ascending: false });
 
