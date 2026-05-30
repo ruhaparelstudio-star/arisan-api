@@ -250,4 +250,15 @@ BE-8 (2026-05-30):
 - Route auth audit: auth.ts (public), health.ts (public), users/groups/payments/undian/swaps (jwtAuth), cron (X-Cron-Secret), admin (X-Admin-Secret).
 - auth.ts: tambah error handling null-safe untuk insert user baru (kasus Supabase gagal insert).
 - RLS audit + DigitalOcean deploy: perlu dilakukan manual (lihat BE-8-security.md untuk langkah-langkah).
+
+BE-10 (2026-05-30) — GAP deferred dari MO-09:
+- 003_messages.sql: tabel messages (group_id, user_id, content), RLS sengaja OFF karena JWT kustom tidak punya sub claim — auth.uid() tidak berfungsi. Security dari backend membership check + group_id UUID.
+- ALTER PUBLICATION supabase_realtime ADD TABLE messages — wajib dijalankan via migration agar Supabase Realtime bekerja.
+- 004_notifications.sql: tabel notifications inbox (terpisah dari notif_log audit trail), RLS ON tapi no policy = deny all non-service-role.
+- POST /api/groups/:groupId/messages: validasi membership via group_members sebelum insert, return message dengan JOIN users.
+- GET /api/notifications: pagination dengan before=<uuid> cursor. PATCH /read-all WAJIB didaftarkan sebelum /:id/read.
+- insertNotification() di services/notifications.ts: fire-and-forget helper, error hanya di-log.
+- Wire notifikasi: payments.ts (payment_confirmed → user dibayar), undian.ts (undian_done → semua member via async IIFE), swaps.ts (swap_approved/rejected → requester+target).
+- Supabase PromiseLike tidak punya .catch() — chain .then().catch() gagal TypeScript. Fix: pakai void (async () => {...})() pattern.
+- GAP-032: hapus import generateUserToken + endpoint /stream-token dari users.ts. streamio.ts TIDAK dihapus karena masih dipakai di groups.ts dan services/undian.ts.
 ```
