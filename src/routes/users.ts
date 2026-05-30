@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { zValidator } from '@hono/zod-validator';
 import { jwtAuth } from '../middleware/auth';
-import { generateUserToken } from '../services/streamio';
 import { supabase } from '../db/supabase';
 
 type Variables = { userId: string; phone: string };
@@ -44,12 +43,6 @@ usersRoute.delete('/me', async (c) => {
     })
     .eq('id', userId);
   return c.json({ message: 'Akun berhasil dihapus' });
-});
-
-usersRoute.get('/stream-token', (c) => {
-  const userId = c.get('userId');
-  const token = generateUserToken(userId);
-  return c.json({ token });
 });
 
 usersRoute.put(

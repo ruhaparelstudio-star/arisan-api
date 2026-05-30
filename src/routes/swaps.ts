@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { jwtAuth } from '../middleware/auth';
 import { supabase } from '../db/supabase';
 import * as ss from '../services/swaps';
+import { insertNotification } from '../services/notifications';
 
 type Variables = { userId: string };
 
@@ -99,6 +100,35 @@ swapsRoute.post(
 
     const result = await ss.approveSwap(swapId, ketuaId, decision);
     if (result.error) return c.json({ error: result.error }, 400);
+
+    // Notifikasi ke requester dan target — fire-and-forget
+    void (async () => {
+      const { data: swap } = await supabase
+        .from('swap_requests')
+        .select('requester_id, target_id, group_id')
+        .eq('id', swapId)
+        .single();
+      if (!swap) return;
+      const approved = decision === 'approved';
+      await insertNotification(
+        swap.requester_id,
+        'swap_approved',
+        approved ? 'Tukar Giliran Disetujui' : 'Tukar Giliran Ditolak',
+        approved
+          ? 'Ketua menyetujui request tukar giliran kamu.'
+          : 'Ketua menolak request tukar giliran kamu.',
+        { group_id: swap.group_id, swap_id: swapId }
+      ).catch(() => {});
+      if (approved) {
+        await insertNotification(
+          swap.target_id,
+          'swap_approved',
+          'Tukar Giliran Disetujui',
+          'Ketua menyetujui tukar giliran kamu dengan anggota lain.',
+          { group_id: swap.group_id, swap_id: swapId }
+        ).catch(() => {});
+      }
+    })();
 
     return c.json({ status: result.status });
   }
