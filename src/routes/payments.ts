@@ -4,6 +4,8 @@ import { zValidator } from '@hono/zod-validator';
 import { jwtAuth } from '../middleware/auth';
 import * as ps from '../services/payments';
 import { logActivity } from '../services/groups';
+import { insertNotification } from '../services/notifications';
+import { supabase } from '../db/supabase';
 
 type Variables = { userId: string };
 
@@ -37,6 +39,21 @@ paymentsRoute.post('/:groupId/:periodId/confirm', zValidator('json', confirmSche
   if (!result.success) return c.json({ error: result.reason }, 400);
 
   await logActivity(groupId, confirmedBy, 'payment_confirmed', 'Pembayaran anggota dikonfirmasi');
+
+  // Notifikasi ke user yang dibayar — tidak throw jika gagal
+  const { data: period } = await supabase
+    .from('periods')
+    .select('periode_ke')
+    .eq('id', periodId)
+    .single();
+  insertNotification(
+    member_id,
+    'payment_confirmed',
+    'Pembayaran Dikonfirmasi',
+    `Pembayaran kamu untuk periode ${period?.periode_ke ?? ''} telah dikonfirmasi ketua.`,
+    { group_id: groupId, period_id: periodId }
+  ).catch(() => {});
+
   return c.json({ message: 'Pembayaran berhasil dikonfirmasi' });
 });
 

@@ -372,3 +372,33 @@ groupsRoute.delete('/:id', async (c) => {
   await gs.logActivity(groupId, userId, 'group_disbanded', `Grup dibubarkan oleh ketua`);
   return c.json({ message: `Grup "${group.name}" berhasil dibubarkan` });
 });
+
+// POST /api/groups/:groupId/messages
+groupsRoute.post(
+  '/:groupId/messages',
+  zValidator('json', z.object({ content: z.string().min(1).max(500) })),
+  async (c) => {
+    const userId = c.get('userId');
+    const groupId = c.req.param('groupId');
+    const { content } = c.req.valid('json');
+
+    const { data: member } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId)
+      .eq('user_id', userId)
+      .single();
+
+    if (!member) return c.json({ error: 'Kamu bukan anggota grup ini' }, 403);
+
+    const { data: msg, error } = await supabase
+      .from('messages')
+      .insert({ group_id: groupId, user_id: userId, content })
+      .select('id, group_id, user_id, content, created_at, user:users!user_id(name, phone)')
+      .single();
+
+    if (error || !msg) return c.json({ error: 'Gagal mengirim pesan' }, 500);
+
+    return c.json({ message: msg }, 201);
+  }
+);

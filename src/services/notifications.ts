@@ -61,6 +61,20 @@ export async function sendWA(userId: string, message: string): Promise<void> {
   }
 }
 
+// Tulis notifikasi ke inbox user (tabel notifications)
+export async function insertNotification(
+  userId: string,
+  type: string,
+  title: string,
+  body: string,
+  data?: Record<string, unknown>
+): Promise<void> {
+  const { error } = await supabase
+    .from('notifications')
+    .insert({ user_id: userId, type, title, body, data: data ?? null });
+  if (error) logger.error('insertNotification failed', { userId, type, error });
+}
+
 // Kirim push + WA dengan dedup harian per (user_id, type, sent_date)
 export async function sendWithDedup(
   userId: string,

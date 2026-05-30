@@ -5,6 +5,7 @@ import { jwtAuth } from '../middleware/auth';
 import { supabase } from '../db/supabase';
 import * as us from '../services/undian';
 import { logActivity } from '../services/groups';
+import { insertNotification } from '../services/notifications';
 
 type Variables = { userId: string };
 
@@ -122,6 +123,27 @@ undianRoute.post('/:id/undian', zValidator('json', undianSchema), async (c) => {
   await us.broadcastUndianResult(groupId, winnerName, period.periode_ke);
 
   await logActivity(groupId, ketuaId, 'undian', `Undian mode ${body.mode}: pemenang ${winnerName}`);
+
+  // Notifikasi ke semua anggota — fire-and-forget, tidak throw
+  void (async () => {
+    const { data: members } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+    if (!members) return;
+    for (const m of members) {
+      const isWinner = m.user_id === winnerId;
+      await insertNotification(
+        m.user_id,
+        'undian_done',
+        isWinner ? 'Kamu Menang Undian!' : 'Undian Selesai',
+        isWinner
+          ? `Selamat! Kamu adalah pemenang undian periode ${period.periode_ke} di grup ${group.name}.`
+          : `Undian periode ${period.periode_ke} di grup ${group.name} selesai. Pemenang: ${winnerName}.`,
+        { group_id: groupId, period_id: body.period_id, winner_id: winnerId }
+      ).catch(() => {});
+    }
+  })();
 
   return c.json({
     winner: { id: winnerId, name: winnerName },
