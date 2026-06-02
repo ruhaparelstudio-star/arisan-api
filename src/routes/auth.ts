@@ -18,8 +18,22 @@ const verifySchema = z.object({
   code: z.string().length(6, 'Kode OTP harus 6 digit'),
 });
 
+// Nomor test sandbox — aktif saat NODE_ENV=development ATAU ENABLE_TEST_BYPASS=true
+const TEST_PHONE_PREFIX = '+628560000100';
+const TEST_OTP_CODE = '123456';
+const isTestPhone = (phone: string) =>
+  (process.env.NODE_ENV === 'development' || process.env.ENABLE_TEST_BYPASS === 'true') &&
+  phone.startsWith(TEST_PHONE_PREFIX);
+
 authRoute.post('/send-otp', zValidator('json', sendSchema), async (c) => {
   const { phone } = c.req.valid('json');
+
+  // Dev sandbox: nomor test skip Fonnte, pakai OTP tetap "123456"
+  if (isTestPhone(phone)) {
+    await otpService.saveOTP(phone, TEST_OTP_CODE);
+    logger.info('Test OTP (dev sandbox)', { phone: maskPhone(phone) });
+    return c.json({ message: 'OTP berhasil dikirim ke WhatsApp kamu' });
+  }
 
   const rateCheck = await otpService.checkRateLimit(phone);
   if (!rateCheck.allowed) {

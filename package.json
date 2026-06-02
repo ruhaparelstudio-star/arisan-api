@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
-    "build": "tsc",
+    "build": "esbuild api/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/api.js --external:ws --external:bufferutil --external:utf-8-validate --external:jsonwebtoken --define:import.meta.url='\"file:///var/task/dist/api.js\"'",
+    "build:local": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write src",
@@ -35,6 +36,7 @@
     "@types/node": "^20",
     "@typescript-eslint/eslint-plugin": "^8.60.0",
     "@typescript-eslint/parser": "^8.60.0",
+    "esbuild": "^0.28.0",
     "eslint": "^10.4.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
