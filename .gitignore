@@ -4,3 +4,11 @@ dist
 *.local
 .DS_Store
 .vercel
+
+# Spec sesi BE (tidak untuk VCS)
+BE-*.md
+API_DOCUMENTATION.md
+
+# File lokal dev
+arisan-local.postman_environment.json
+seed-output.json
