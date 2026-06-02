@@ -205,6 +205,39 @@ groupsRoute.put(
   }
 );
 
+// POST /api/groups/:id/start — ketua mulai arisan (recruiting → active + buat periode 1)
+groupsRoute.post('/:id/start', async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id');
+
+  const { data: group } = await supabase
+    .from('groups')
+    .select('ketua_id, status, jumlah_periode, name')
+    .eq('id', groupId)
+    .single();
+  if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
+  if (group.ketua_id !== userId)
+    return c.json({ error: 'Hanya ketua yang bisa memulai arisan' }, 403);
+  if (group.status !== 'recruiting')
+    return c.json({ error: 'Grup sudah dimulai atau tidak aktif' }, 400);
+
+  const { count: memberCount } = await supabase
+    .from('group_members')
+    .select('*', { count: 'exact', head: true })
+    .eq('group_id', groupId);
+  if ((memberCount ?? 0) < 2)
+    return c.json({ error: 'Minimal 2 anggota untuk memulai arisan' }, 400);
+
+  // Update status grup → active
+  await supabase.from('groups').update({ status: 'active' }).eq('id', groupId);
+
+  // Buat periode 1 sebagai active
+  await supabase.from('periods').insert({ group_id: groupId, periode_ke: 1, status: 'active' });
+
+  await gs.logActivity(groupId, userId, 'group_started', `Arisan "${group.name}" resmi dimulai`);
+  return c.json({ message: 'Arisan berhasil dimulai' });
+});
+
 // POST /api/groups/:id/invite — regenerate kode invite (ketua only)
 groupsRoute.post('/:id/invite', async (c) => {
   const userId = c.get('userId');
