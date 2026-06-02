@@ -29,6 +29,14 @@ groupsRoute.post('/', zValidator('json', createSchema), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
 
+  const { data: userRecord } = await supabase
+    .from('users')
+    .select('name')
+    .eq('id', userId)
+    .single();
+  if (!userRecord?.name)
+    return c.json({ error: 'Lengkapi nama profil kamu sebelum membuat grup arisan' }, 400);
+
   const check = await gs.canUserJoinOrCreate(userId);
   if (!check.allowed) return c.json({ error: check.reason }, 403);
 
@@ -118,6 +126,14 @@ groupsRoute.post(
       .eq('user_id', userId)
       .single();
     if (existing) return c.json({ error: 'Kamu sudah bergabung di grup ini' }, 400);
+
+    const { data: userRecord } = await supabase
+      .from('users')
+      .select('name')
+      .eq('id', userId)
+      .single();
+    if (!userRecord?.name)
+      return c.json({ error: 'Lengkapi nama profil kamu sebelum bergabung ke grup arisan' }, 400);
 
     const check = await gs.canUserJoinOrCreate(userId);
     if (!check.allowed) return c.json({ error: check.reason }, 403);
