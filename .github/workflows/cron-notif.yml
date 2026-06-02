@@ -19,3 +19,8 @@ jobs:
         run: |
           curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/pelaksanaan-reminder" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+
+      - name: Mark Late Payments
+        run: |
+          curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/payments/cron/mark-late" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

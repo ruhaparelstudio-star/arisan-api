@@ -17,6 +17,8 @@ paymentsRoute.get('/cron/mark-late', async (c) => {
   if (c.req.header('X-Cron-Secret') !== process.env.CRON_SECRET)
     return c.json({ error: 'Unauthorized' }, 401);
   const updated = await ps.markLatePayments();
+  // Notifikasi ketua setiap grup yang ada payment terlambat — fire-and-forget
+  ps.notifyKetuasOfLatePayments().catch(() => {});
   return c.json({ updated, message: `${updated} pembayaran ditandai terlambat` });
 });
 

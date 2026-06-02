@@ -357,7 +357,8 @@ adminRoute.get('/system-health', async (c) => {
 
   try {
     const { error } = await supabase.rpc('health_check_select1').single();
-    supabaseStatus = error ? 'error' : 'ok';
+    if (error) throw error;
+    supabaseStatus = 'ok';
   } catch {
     // fallback: try a simple table query
     try {
@@ -429,4 +430,37 @@ adminRoute.post('/cron/trigger/:type', async (c) => {
     logger.error('Admin cron trigger gagal', { type, err });
     return c.json({ error: 'Gagal menjalankan cron' }, 503);
   }
+});
+
+// GET /admin/crashlytics/status
+adminRoute.get('/crashlytics/status', async (c) => {
+  const [{ count: totalUsers }, { count: activeDevices }] = await Promise.all([
+    supabase.from('users').select('*', { count: 'exact', head: true }).is('deleted_at', null),
+    supabase.from('push_tokens').select('*', { count: 'exact', head: true }),
+  ]);
+
+  return c.json({
+    integration: {
+      project_id: 'arisan-app-5ecef',
+      project_number: '376511029938',
+      app_id: '1:376511029938:android:e55860053a01bead41dfab',
+      package_name: 'com.ruhaparelstudio.arisan',
+      sdk_version: '24.0.0',
+      collection_enabled: true,
+      debug_enabled: true,
+      sha_registered: true,
+      configured_at: '2026-06-01',
+    },
+    stats: {
+      registered_devices: activeDevices ?? 0,
+      total_users: totalUsers ?? 0,
+    },
+    links: {
+      console: 'https://console.firebase.google.com/project/arisan-app-5ecef/crashlytics',
+      issues:
+        'https://console.firebase.google.com/project/arisan-app-5ecef/crashlytics/app/android:com.ruhaparelstudio.arisan/issues',
+      project_settings:
+        'https://console.firebase.google.com/project/arisan-app-5ecef/settings/general',
+    },
+  });
 });

@@ -1,0 +1,756 @@
+{
+  "info": {
+    "name": "Arisan App API",
+    "_postman_id": "arisan-api-collection",
+    "description": "Koleksi endpoint arisan-api (BE-0 s/d BE-8 lengkap).\n\nGunakan environment 'Arisan Local'.\n\nAlur test dasar:\n1. GET /health → pastikan server jalan\n2. POST /api/auth/send-otp → kirim OTP ke WhatsApp\n3. POST /api/auth/verify-otp → isi kode OTP → {{token}} tersimpan otomatis\n4. Semua endpoint /api/* (kecuali auth) butuh Bearer {{token}}\n5. /api/cron/* dan /api/payments/cron/* butuh header X-Cron-Secret: {{cron_secret}}\n6. /admin/* butuh header X-Admin-Secret: {{admin_secret}}",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3001", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "cron_secret", "value": "", "type": "string" },
+    { "key": "admin_secret", "value": "", "type": "string" },
+    { "key": "group_id", "value": "", "type": "string" },
+    { "key": "period_id", "value": "", "type": "string" },
+    { "key": "swap_id", "value": "", "type": "string" },
+    { "key": "user_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST send-otp",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/auth/send-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "send-otp"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+628123456789\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "POST verify-otp",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  if (res.user?.id) pm.collectionVariables.set('user_id', res.user.id);",
+                  "  console.log('Token tersimpan:', res.token.slice(0, 20) + '...');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/auth/verify-otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "verify-otp"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+628123456789\",\n  \"code\": \"123456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "GET /me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            }
+          }
+        },
+        {
+          "name": "PUT /me (update nama)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Budi Santoso\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "DELETE /me (anonymize akun)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            }
+          }
+        },
+        {
+          "name": "GET /stream-token",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/users/stream-token",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "stream-token"]
+            }
+          }
+        },
+        {
+          "name": "PUT /push-token",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/push-token",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "push-token"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expo_push_token\": \"ExponentPushToken[xxxxxxxxxxxxxxxxxxxx]\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Groups",
+      "item": [
+        {
+          "name": "POST / (buat grup)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.group?.id) {",
+                  "  pm.collectionVariables.set('group_id', res.group.id);",
+                  "  console.log('group_id tersimpan:', res.group.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Arisan RT 05\",\n  \"nominal\": 500000,\n  \"frekuensi\": \"monthly\",\n  \"jumlah_periode\": 10,\n  \"mode_undian\": \"fixed\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "GET / (daftar grup saya)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/groups",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups"]
+            }
+          }
+        },
+        {
+          "name": "POST /join (gabung dengan invite code)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/join",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "join"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_code\": \"ABCD1234\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "GET /:id (detail grup)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}"]
+            }
+          }
+        },
+        {
+          "name": "PUT /:id/urutan (ketua atur urutan)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}/urutan",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}", "urutan"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"urutan\": [\n    \"uuid-user-1\",\n    \"uuid-user-2\",\n    \"uuid-user-3\"\n  ]\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "PUT /:groupId/periods/:periodId/tanggal (ketua set tanggal)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}/periods/{{period_id}}/tanggal",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}", "periods", "{{period_id}}", "tanggal"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tanggal_pelaksanaan\": \"2026-07-15\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "DELETE /:id/leave (anggota keluar)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}/leave",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}", "leave"]
+            }
+          }
+        },
+        {
+          "name": "DELETE /:id (ketua bubarkan grup)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "GET /:groupId/:periodId (status pembayaran)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/payments/{{group_id}}/{{period_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "{{group_id}}", "{{period_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /:groupId/:periodId/confirm (ketua konfirmasi)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/payments/{{group_id}}/{{period_id}}/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "{{group_id}}", "{{period_id}}", "confirm"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"member_id\": \"uuid-user-yang-bayar\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "DELETE /:groupId/:periodId/confirm (batalkan konfirmasi)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/payments/{{group_id}}/{{period_id}}/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "{{group_id}}", "{{period_id}}", "confirm"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"member_id\": \"uuid-user-yang-bayar\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "GET /cron/mark-late [X-Cron-Secret]",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Cron-Secret", "value": "{{cron_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/payments/cron/mark-late",
+              "host": ["{{base_url}}"],
+              "path": ["api", "payments", "cron", "mark-late"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Undian",
+      "item": [
+        {
+          "name": "POST /:id/undian — mode fixed",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}/undian",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}", "undian"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"fixed\",\n  \"period_id\": \"{{period_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "POST /:id/undian — mode random",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}/undian",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}", "undian"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"random\",\n  \"period_id\": \"{{period_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "POST /:id/undian — mode manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/groups/{{group_id}}/undian",
+              "host": ["{{base_url}}"],
+              "path": ["api", "groups", "{{group_id}}", "undian"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"manual\",\n  \"period_id\": \"{{period_id}}\",\n  \"winner_id\": \"uuid-user-pemenang\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Swaps",
+      "item": [
+        {
+          "name": "GET /my (swap milik saya)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/swaps/my",
+              "host": ["{{base_url}}"],
+              "path": ["api", "swaps", "my"]
+            }
+          }
+        },
+        {
+          "name": "GET /group/:groupId (semua swap grup — ketua)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/swaps/group/{{group_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "swaps", "group", "{{group_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST / (ajukan swap)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.swap?.id) {",
+                  "  pm.collectionVariables.set('swap_id', res.swap.id);",
+                  "  console.log('swap_id tersimpan:', res.swap.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/swaps",
+              "host": ["{{base_url}}"],
+              "path": ["api", "swaps"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"group_id\": \"{{group_id}}\",\n  \"target_id\": \"uuid-user-target\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "POST /:id/respond (target terima/tolak)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/swaps/{{swap_id}}/respond",
+              "host": ["{{base_url}}"],
+              "path": ["api", "swaps", "{{swap_id}}", "respond"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"response\": \"accepted\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "POST /:id/approve (ketua approve/reject)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/swaps/{{swap_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "swaps", "{{swap_id}}", "approve"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"approved\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cron [X-Cron-Secret]",
+      "item": [
+        {
+          "name": "GET /payment-reminder",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Cron-Secret", "value": "{{cron_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/cron/payment-reminder",
+              "host": ["{{base_url}}"],
+              "path": ["api", "cron", "payment-reminder"]
+            }
+          }
+        },
+        {
+          "name": "GET /pelaksanaan-reminder",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Cron-Secret", "value": "{{cron_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/api/cron/pelaksanaan-reminder",
+              "host": ["{{base_url}}"],
+              "path": ["api", "cron", "pelaksanaan-reminder"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin [X-Admin-Secret]",
+      "item": [
+        {
+          "name": "GET /stats/overview",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/stats/overview",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "stats", "overview"]
+            }
+          }
+        },
+        {
+          "name": "GET /system-health",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/system-health",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "system-health"]
+            }
+          }
+        },
+        {
+          "name": "GET /otp-stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/otp-stats",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "otp-stats"]
+            }
+          }
+        },
+        {
+          "name": "GET /users (list + filter)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/users?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "status", "value": "active", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /users/:id (detail user)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "{{user_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /users/:id/suspend",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}/suspend",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "{{user_id}}", "suspend"]
+            }
+          }
+        },
+        {
+          "name": "POST /users/:id/unsuspend",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}/unsuspend",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "{{user_id}}", "unsuspend"]
+            }
+          }
+        },
+        {
+          "name": "DELETE /users/:id (anonymize)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users", "{{user_id}}"]
+            }
+          }
+        },
+        {
+          "name": "GET /groups (list + filter status)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/groups?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "groups"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "active", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /groups/:id (detail grup)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/groups/{{group_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "groups", "{{group_id}}"]
+            }
+          }
+        },
+        {
+          "name": "POST /cron/trigger/payment-reminder",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/cron/trigger/payment-reminder",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "cron", "trigger", "payment-reminder"]
+            }
+          }
+        },
+        {
+          "name": "POST /cron/trigger/pelaksanaan-reminder",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/cron/trigger/pelaksanaan-reminder",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "cron", "trigger", "pelaksanaan-reminder"]
+            }
+          }
+        },
+        {
+          "name": "POST /cron/trigger/mark-late",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-Admin-Secret", "value": "{{admin_secret}}" }],
+            "url": {
+              "raw": "{{base_url}}/admin/cron/trigger/mark-late",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "cron", "trigger", "mark-late"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

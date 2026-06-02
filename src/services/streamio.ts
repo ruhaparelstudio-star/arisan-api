@@ -1,5 +1,6 @@
 import { StreamChat } from 'stream-chat';
 import { logger } from '../utils/logger';
+import { supabase } from '../db/supabase';
 
 function getClient(): StreamChat {
   return StreamChat.getInstance(process.env.STREAM_API_KEY!, process.env.STREAM_API_SECRET!);
@@ -48,6 +49,19 @@ export async function removeMemberFromChannel(groupId: string, userId: string): 
 }
 
 export async function sendSystemMessage(groupId: string, text: string): Promise<void> {
+  // Tulis ke Supabase messages table agar tampil di ChatScreen mobile
+  // user_id null = system message (tidak ada FK constraint violation)
+  try {
+    await supabase.from('messages').insert({
+      group_id: groupId,
+      user_id: null,
+      content: text,
+    });
+  } catch (err) {
+    logger.error('Supabase sendSystemMessage failed', { groupId, err });
+  }
+
+  // Tetap kirim ke Stream.io (best-effort, tidak block)
   try {
     const client = getClient();
     const channel = client.channel('messaging', `group-${groupId}`);
@@ -55,6 +69,5 @@ export async function sendSystemMessage(groupId: string, text: string): Promise<
     logger.info('Stream system message sent', { groupId, text });
   } catch (err) {
     logger.error('Stream sendSystemMessage failed', { groupId, err });
-    // Kegagalan Stream tidak boleh gagalkan operasi utama
   }
 }

@@ -88,10 +88,10 @@ undianRoute.post('/:id/undian', zValidator('json', undianSchema), async (c) => {
 
     const { data: winnerUser } = await supabase
       .from('users')
-      .select('name')
+      .select('name, phone')
       .eq('id', winnerId)
       .single();
-    winnerName = winnerUser?.name ?? '';
+    winnerName = winnerUser?.name || winnerUser?.phone || 'anggota';
   } else {
     // manual
     const { data: manualUser } = await supabase
@@ -118,6 +118,10 @@ undianRoute.post('/:id/undian', zValidator('json', undianSchema), async (c) => {
 
   // Simpan winner — INSERT ONLY
   await us.saveWinner(groupId, body.period_id, winnerId);
+
+  // NOTE: netting hutang (autoConfirmNetting) TIDAK dijalankan otomatis karena
+  // akan mengurangi jumlah yang diterima pemenang berikutnya secara tidak adil.
+  // Netting hanya dilakukan manual oleh ketua via endpoint resolveKabur.
 
   // Broadcast ke Stream.io — tidak throw jika gagal
   await us.broadcastUndianResult(groupId, winnerName, period.periode_ke);

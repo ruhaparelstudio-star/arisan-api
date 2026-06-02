@@ -45,6 +45,39 @@ usersRoute.delete('/me', async (c) => {
   return c.json({ message: 'Akun berhasil dihapus' });
 });
 
+// GET /api/users/me/stats — total grup, total iuran terkonfirmasi, total menang undian
+usersRoute.get('/me/stats', async (c) => {
+  const userId = c.get('userId');
+
+  const [groupsRes, paymentsRes, winsRes] = await Promise.all([
+    supabase
+      .from('group_members')
+      .select('group_id', { count: 'exact', head: true })
+      .eq('user_id', userId),
+    supabase
+      .from('payments')
+      .select('period_id, periods(group_id, groups!group_id(nominal))')
+      .eq('user_id', userId)
+      .eq('status', 'confirmed'),
+    supabase.from('winners').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+  ]);
+
+  const groupCount = groupsRes.count ?? 0;
+  const winCount = winsRes.count ?? 0;
+
+  const totalIuran = (paymentsRes.data ?? []).reduce((sum: number, p: Record<string, unknown>) => {
+    const nominal = (p.periods as Record<string, unknown> | null)
+      ? ((p.periods as Record<string, unknown>).groups as Record<string, unknown> | null)
+        ? ((((p.periods as Record<string, unknown>).groups as Record<string, unknown>)
+            .nominal as number) ?? 0)
+        : 0
+      : 0;
+    return sum + nominal;
+  }, 0);
+
+  return c.json({ group_count: groupCount, total_iuran: totalIuran, win_count: winCount });
+});
+
 usersRoute.put(
   '/push-token',
   zValidator('json', z.object({ expo_push_token: z.string() })),
