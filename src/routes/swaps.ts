@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { jwtAuth } from '../middleware/auth';
 import { supabase } from '../db/supabase';
 import * as ss from '../services/swaps';
+import * as gs from '../services/groups';
 import { insertNotification } from '../services/notifications';
 
 type Variables = { userId: string };
@@ -49,6 +50,36 @@ swapsRoute.get('/group/:groupId', async (c) => {
   return c.json({ swaps: data ?? [] });
 });
 
+// POST /api/swaps/ketua — ketua inisiasi tukar giliran antar dua anggota (Mode 2)
+// Harus sebelum POST / agar tidak tertangkap route '/'
+swapsRoute.post(
+  '/ketua',
+  zValidator(
+    'json',
+    z.object({
+      member_a_id: z.string().uuid(),
+      member_b_id: z.string().uuid(),
+      group_id: z.string().uuid(),
+    })
+  ),
+  async (c) => {
+    const ketuaId = c.get('userId');
+    const { member_a_id, member_b_id, group_id } = c.req.valid('json');
+
+    const result = await ss.createKetuaSwapRequest(ketuaId, member_a_id, member_b_id, group_id);
+    if (result.error) return c.json({ error: result.error }, 400);
+
+    await gs.logActivity(
+      group_id,
+      ketuaId,
+      'urutan_updated',
+      `Ketua meminta tukar giliran antara dua anggota — menunggu persetujuan target`
+    );
+
+    return c.json({ swap: result.swap }, 201);
+  }
+);
+
 // POST /api/swaps
 swapsRoute.post(
   '/',
@@ -65,6 +96,42 @@ swapsRoute.post(
 
     if (requesterId === target_id)
       return c.json({ error: 'Kamu tidak bisa menukar giliran dengan dirimu sendiri' }, 400);
+
+    // Cek apakah target sudah pernah menang undian — tidak boleh ditukar
+    const { data: targetWin } = await supabase
+      .from('winners')
+      .select('id')
+      .eq('group_id', group_id)
+      .eq('user_id', target_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (targetWin)
+      return c.json(
+        {
+          error:
+            'Target sudah pernah memenangkan undian dan menerima uang arisan. Tidak bisa tukar giliran dengan penerima arisan.',
+        },
+        400
+      );
+
+    // Cek apakah requester sendiri sudah pernah menang (tidak bisa tukar setelah menang)
+    const { data: requesterWin } = await supabase
+      .from('winners')
+      .select('id')
+      .eq('group_id', group_id)
+      .eq('user_id', requesterId)
+      .limit(1)
+      .maybeSingle();
+
+    if (requesterWin)
+      return c.json(
+        {
+          error:
+            'Kamu sudah pernah memenangkan undian. Tukar giliran hanya untuk anggota yang belum mendapat giliran.',
+        },
+        400
+      );
 
     const result = await ss.createSwapRequest(requesterId, target_id, group_id);
     if (result.error) return c.json({ error: result.error }, 400);

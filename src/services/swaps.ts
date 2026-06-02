@@ -100,35 +100,174 @@ export async function respondSwap(
 
   if (!swap) return { error: 'Permintaan tukar giliran tidak ditemukan' };
   if (swap.target_id !== targetId) return { error: 'Kamu bukan target dari permintaan ini' };
-  if (swap.status !== 'pending') return { error: 'Permintaan ini sudah tidak bisa direspons' };
 
-  const newStatus = response === 'accepted' ? 'waiting_ketua' : 'rejected';
+  // Terima status 'pending' (normal) DAN 'ketua_pending' (inisiasi ketua)
+  if (swap.status !== 'pending' && swap.status !== 'ketua_pending') {
+    return { error: 'Permintaan ini sudah tidak bisa direspons' };
+  }
 
-  const { error } = await supabase
-    .from('swap_requests')
-    .update({ status: newStatus, target_response_at: new Date() })
-    .eq('id', swapId);
+  if (response === 'rejected') {
+    await supabase
+      .from('swap_requests')
+      .update({ status: 'rejected', target_response_at: new Date() })
+      .eq('id', swapId);
+    await sendWA(swap.requester_id, `Permintaan tukar giliran kamu ditolak.`);
+    return { status: 'rejected' };
+  }
 
-  if (error) return { error: 'Gagal memperbarui permintaan tukar giliran' };
+  // Target accepted
+  if (swap.status === 'ketua_pending') {
+    // Ketua-initiated: auto-approve langsung, tidak perlu ketua approval step
+    const { error: updateErr } = await supabase
+      .from('swap_requests')
+      .update({ status: 'approved', target_response_at: new Date(), ketua_response_at: new Date() })
+      .eq('id', swapId);
 
-  if (response === 'accepted') {
-    const { data: group } = await supabase
+    if (updateErr) return { error: 'Gagal memperbarui permintaan tukar giliran' };
+
+    const { data: requesterMember } = await supabase
+      .from('group_members')
+      .select('urutan')
+      .eq('group_id', swap.group_id)
+      .eq('user_id', swap.requester_id)
+      .single();
+    const { data: targetMember } = await supabase
+      .from('group_members')
+      .select('urutan')
+      .eq('group_id', swap.group_id)
+      .eq('user_id', swap.target_id)
+      .single();
+
+    if (requesterMember && targetMember) {
+      await supabase
+        .from('group_members')
+        .update({ urutan: targetMember.urutan })
+        .eq('group_id', swap.group_id)
+        .eq('user_id', swap.requester_id);
+      await supabase
+        .from('group_members')
+        .update({ urutan: requesterMember.urutan })
+        .eq('group_id', swap.group_id)
+        .eq('user_id', swap.target_id);
+      await logActivity(
+        swap.group_id,
+        swap.requester_id,
+        'swap_approved',
+        `Tukar giliran (inisiatif ketua) disetujui: urutan ${requesterMember.urutan} ↔ ${targetMember.urutan}`
+      );
+    }
+
+    await sendWA(swap.requester_id, `Tukar giliran kamu disetujui! Urutan kamu telah diperbarui.`);
+    const { data: grp } = await supabase
       .from('groups')
       .select('ketua_id')
       .eq('id', swap.group_id)
       .single();
-
-    if (group?.ketua_id) {
+    if (grp?.ketua_id)
       await sendWA(
-        group.ketua_id,
-        `Ada permintaan tukar giliran di grup arisan yang menunggu persetujuanmu. Buka aplikasi untuk menyetujui.`
+        grp.ketua_id,
+        `Tukar giliran yang kamu inisiasi telah disetujui oleh anggota target.`
       );
-    }
-  } else {
-    await sendWA(swap.requester_id, `Permintaan tukar giliran kamu ditolak oleh target.`);
+
+    return { status: 'approved' };
   }
 
-  return { status: newStatus };
+  // Normal flow: target menerima → waiting_ketua
+  const { error } = await supabase
+    .from('swap_requests')
+    .update({ status: 'waiting_ketua', target_response_at: new Date() })
+    .eq('id', swapId);
+
+  if (error) return { error: 'Gagal memperbarui permintaan tukar giliran' };
+
+  const { data: group } = await supabase
+    .from('groups')
+    .select('ketua_id')
+    .eq('id', swap.group_id)
+    .single();
+  if (group?.ketua_id) {
+    await sendWA(
+      group.ketua_id,
+      `Ada permintaan tukar giliran di grup arisan yang menunggu persetujuanmu. Buka aplikasi untuk menyetujui.`
+    );
+  }
+
+  return { status: 'waiting_ketua' };
+}
+
+// Ketua-initiated swap (Mode 2): status 'ketua_pending' — target B respond, lalu auto-approved
+// Tidak perlu kolom baru — pakai status string yang sudah ada (VARCHAR column)
+export async function createKetuaSwapRequest(
+  ketuaId: string,
+  memberAId: string,
+  memberBId: string,
+  groupId: string
+): Promise<{ swap?: Record<string, unknown>; error?: string }> {
+  if (memberAId === memberBId) return { error: 'Pilih dua anggota yang berbeda' };
+
+  const { data: group } = await supabase
+    .from('groups')
+    .select('ketua_id')
+    .eq('id', groupId)
+    .single();
+  if (!group) return { error: 'Grup tidak ditemukan' };
+  if (group.ketua_id !== ketuaId)
+    return { error: 'Hanya ketua yang bisa menginisiasi tukar giliran ini' };
+
+  for (const memberId of [memberAId, memberBId]) {
+    const { data: member } = await supabase
+      .from('group_members')
+      .select('urutan')
+      .eq('group_id', groupId)
+      .eq('user_id', memberId)
+      .single();
+    if (!member) return { error: 'Salah satu anggota bukan member grup ini' };
+
+    const { data: completedPeriod } = await supabase
+      .from('periods')
+      .select('id')
+      .eq('group_id', groupId)
+      .eq('periode_ke', member.urutan)
+      .eq('status', 'completed')
+      .maybeSingle();
+    if (completedPeriod)
+      return { error: 'Salah satu anggota sudah melewati gilirannya, tidak bisa ditukar' };
+  }
+
+  // Cek tidak ada swap aktif antar keduanya
+  const { data: existingSwap } = await supabase
+    .from('swap_requests')
+    .select('id')
+    .eq('group_id', groupId)
+    .or(
+      `and(requester_id.eq.${memberAId},target_id.eq.${memberBId}),and(requester_id.eq.${memberBId},target_id.eq.${memberAId})`
+    )
+    .in('status', ['pending', 'ketua_pending', 'waiting_ketua'])
+    .maybeSingle();
+  if (existingSwap)
+    return {
+      error: 'Sudah ada permintaan tukar giliran yang sedang diproses antara dua anggota ini',
+    };
+
+  const { data: swap, error } = await supabase
+    .from('swap_requests')
+    .insert({
+      group_id: groupId,
+      requester_id: memberAId,
+      target_id: memberBId,
+      status: 'ketua_pending',
+    })
+    .select()
+    .single();
+
+  if (error || !swap) return { error: 'Gagal membuat permintaan tukar giliran' };
+
+  await sendWA(
+    memberBId,
+    `Ketua grup arisan mengajukan tukar giliran antara kamu dan anggota lain. Buka aplikasi untuk merespons.`
+  );
+
+  return { swap: swap as Record<string, unknown> };
 }
 
 export async function approveSwap(

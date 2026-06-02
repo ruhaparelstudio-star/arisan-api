@@ -1,9 +1,10 @@
 import { supabase } from '../db/supabase';
+import { insertNotification } from './notifications';
 
 export async function getPeriodPaymentStatus(periodId: string) {
   const { data } = await supabase
     .from('payments')
-    .select('*, users(id, name, phone)')
+    .select('*, users!user_id(id, name, phone)')
     .eq('period_id', periodId)
     .order('status');
   return data ?? [];
@@ -75,16 +76,84 @@ export async function cancelConfirmPayment(
   return { success: true };
 }
 
+// Notifikasi ke ketua setiap grup yang punya anggota belum bayar lewat jatuh tempo
+export async function notifyKetuasOfLatePayments(): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+
+  const { data: overduePeriods } = await supabase
+    .from('periods')
+    .select('id, group_id, jatuh_tempo, groups!inner(name, ketua_id)')
+    .eq('status', 'active')
+    .lt('jatuh_tempo', today);
+
+  for (const period of overduePeriods ?? []) {
+    const group = period.groups as unknown as { name: string; ketua_id: string };
+
+    const [{ data: allMembers }, { data: confirmed }] = await Promise.all([
+      supabase.from('group_members').select('user_id').eq('group_id', period.group_id),
+      supabase
+        .from('payments')
+        .select('user_id')
+        .eq('period_id', period.id)
+        .eq('status', 'confirmed'),
+    ]);
+
+    const confirmedSet = new Set((confirmed ?? []).map((p) => p.user_id));
+    const unpaidCount = (allMembers ?? []).filter((m) => !confirmedSet.has(m.user_id)).length;
+
+    if (unpaidCount > 0) {
+      await insertNotification(
+        group.ketua_id,
+        'payment_late',
+        '⚠ Ada Anggota Belum Bayar',
+        `${unpaidCount} anggota belum bayar di grup "${group.name}". Jatuh tempo sudah terlewat. Ketuk untuk tindak lanjuti.`,
+        { group_id: period.group_id, period_id: period.id }
+      ).catch(() => {});
+    }
+  }
+}
+
 export async function markLatePayments(): Promise<number> {
   const today = new Date().toISOString().split('T')[0];
-  const { data } = await supabase
+
+  // Step 1: tandai record pending yang sudah lewat jatuh tempo
+  const { data: existing } = await supabase
     .from('payments')
     .select('id, period_id, periods!inner(jatuh_tempo)')
     .eq('status', 'pending')
     .lt('periods.jatuh_tempo', today);
 
-  if (!data?.length) return 0;
-  const ids = data.map((d) => d.id);
-  await supabase.from('payments').update({ status: 'late' }).in('id', ids);
-  return ids.length;
+  let updated = 0;
+  if (existing?.length) {
+    const ids = existing.map((d) => d.id);
+    await supabase.from('payments').update({ status: 'late' }).in('id', ids);
+    updated += ids.length;
+  }
+
+  // Step 2: buat record late untuk anggota yang SAMA SEKALI belum punya payment
+  // pada periode yang sudah lewat jatuh tempo — jangan sentuh confirmed/late yang ada
+  const { data: overduePeriods } = await supabase
+    .from('periods')
+    .select('id, group_id')
+    .eq('status', 'active')
+    .lt('jatuh_tempo', today);
+
+  for (const period of overduePeriods ?? []) {
+    const [{ data: members }, { data: paidMembers }] = await Promise.all([
+      supabase.from('group_members').select('user_id').eq('group_id', period.group_id),
+      supabase.from('payments').select('user_id').eq('period_id', period.id),
+    ]);
+
+    const paidSet = new Set((paidMembers ?? []).map((p) => p.user_id));
+    const unpaid = (members ?? []).filter((m) => !paidSet.has(m.user_id));
+
+    if (unpaid.length) {
+      await supabase
+        .from('payments')
+        .insert(unpaid.map((m) => ({ period_id: period.id, user_id: m.user_id, status: 'late' })));
+      updated += unpaid.length;
+    }
+  }
+
+  return updated;
 }
