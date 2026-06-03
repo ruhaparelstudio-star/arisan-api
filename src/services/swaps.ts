@@ -1,6 +1,6 @@
 import { supabase } from '../db/supabase';
 import { logActivity } from './groups';
-import { sendWA } from './notifications';
+import { sendWA, insertNotification } from './notifications';
 
 export async function getUserSwapCount(userId: string, groupId: string): Promise<number> {
   const { count } = await supabase
@@ -83,10 +83,14 @@ export async function createSwapRequest(
 
   if (error || !swap) return { error: 'Gagal membuat permintaan tukar giliran' };
 
-  await sendWA(
+  await sendWA(targetId, `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`);
+  insertNotification(
     targetId,
-    `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`
-  );
+    'swap_request',
+    'Permintaan Tukar Giliran',
+    'Ada anggota yang ingin menukar giliran arisan dengan kamu. Buka aplikasi untuk merespons.',
+    { group_id: groupId, swap_id: (swap as Record<string, string>).id }
+  ).catch(() => {});
 
   return { swap: swap as Record<string, unknown> };
 }

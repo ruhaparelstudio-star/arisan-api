@@ -128,5 +128,4 @@ export async function broadcastUndianResult(
   periodeKe: number
 ): Promise<void> {
   await sendSystemMessage(groupId, `🎉 Pemenang Periode ${periodeKe}: *${winnerName}*!`);
-  // TODO BE-6: tambah push notif setelah notifications service selesai
 }

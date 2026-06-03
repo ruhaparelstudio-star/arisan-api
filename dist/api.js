@@ -99411,6 +99411,10 @@ var jwtAuth = createMiddleware(async (c, next) => {
   try {
     const token = header.slice(7);
     const payload = (0, import_jsonwebtoken2.verify)(token, process.env.JWT_SECRET);
+    const { data: user } = await supabase.from("users").select("deleted_at").eq("id", payload.userId).single();
+    if (user?.deleted_at) {
+      return c.json({ error: "Akun kamu telah ditangguhkan. Hubungi admin untuk informasi lebih lanjut." }, 403);
+    }
     c.set("userId", payload.userId);
     c.set("phone", payload.phone);
     await next();
@@ -99967,9 +99971,20 @@ groupsRoute.get("/:id", async (c) => {
   const groupId = c.req.param("id");
   const { data: membership } = await supabase.from("group_members").select("*").eq("group_id", groupId).eq("user_id", userId).single();
   if (!membership) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
-  const { data: group } = await supabase.from("groups").select("*").eq("id", groupId).single();
-  const { data: members } = await supabase.from("group_members").select("user_id, urutan, users(id, name, phone)").eq("group_id", groupId).order("urutan");
-  const { data: activePeriod } = await supabase.from("periods").select("id, periode_ke").eq("group_id", groupId).eq("status", "active").maybeSingle();
+  const [{ data: group }, { data: rawMembers }, { data: activePeriod }, { data: swapCounts }] = await Promise.all([
+    supabase.from("groups").select("*").eq("id", groupId).single(),
+    supabase.from("group_members").select("user_id, urutan, users(id, name, phone)").eq("group_id", groupId).order("urutan"),
+    supabase.from("periods").select("id, periode_ke").eq("group_id", groupId).eq("status", "active").maybeSingle(),
+    supabase.from("swap_requests").select("requester_id").eq("group_id", groupId).eq("status", "approved")
+  ]);
+  const swapCountMap = {};
+  for (const s of swapCounts ?? []) {
+    swapCountMap[s.requester_id] = (swapCountMap[s.requester_id] ?? 0) + 1;
+  }
+  const members = (rawMembers ?? []).map((m) => ({
+    ...m,
+    jumlah_tukar: swapCountMap[m.user_id] ?? 0
+  }));
   return c.json({
     group,
     members,
@@ -99998,15 +100013,25 @@ groupsRoute.put(
 groupsRoute.post("/:id/start", async (c) => {
   const userId = c.get("userId");
   const groupId = c.req.param("id");
-  const { data: group } = await supabase.from("groups").select("ketua_id, status, jumlah_periode, name").eq("id", groupId).single();
+  const { data: group } = await supabase.from("groups").select("ketua_id, status, jumlah_periode, name, mode_undian").eq("id", groupId).single();
   if (!group) return c.json({ error: "Grup tidak ditemukan" }, 404);
   if (group.ketua_id !== userId)
     return c.json({ error: "Hanya ketua yang bisa memulai arisan" }, 403);
   if (group.status !== "recruiting")
     return c.json({ error: "Grup sudah dimulai atau tidak aktif" }, 400);
-  const { count: memberCount } = await supabase.from("group_members").select("*", { count: "exact", head: true }).eq("group_id", groupId);
+  const { data: members, count: memberCount } = await supabase.from("group_members").select("user_id, urutan", { count: "exact" }).eq("group_id", groupId);
   if ((memberCount ?? 0) < 2)
     return c.json({ error: "Minimal 2 anggota untuk memulai arisan" }, 400);
+  if (group.mode_undian === "fixed") {
+    const missingUrutan = (members ?? []).filter((m) => m.urutan == null);
+    if (missingUrutan.length > 0)
+      return c.json(
+        {
+          error: `Mode undian "fixed" memerlukan semua anggota memiliki urutan. ${missingUrutan.length} anggota belum diatur urutannya. Atur giliran terlebih dahulu.`
+        },
+        400
+      );
+  }
   await supabase.from("groups").update({ status: "active" }).eq("id", groupId);
   await supabase.from("periods").insert({ group_id: groupId, periode_ke: 1, status: "active" });
   await logActivity(groupId, userId, "group_started", `Arisan "${group.name}" resmi dimulai`);
@@ -100311,7 +100336,7 @@ groupsRoute.post("/:id/periods/:periodId/close", async (c) => {
         m.user_id,
         groupCompleted ? "\u{1F389} Arisan Selesai!" : `\u{1F4C5} Periode ${period.periode_ke + 1} Dimulai`,
         groupCompleted ? `Arisan "${group.name}" telah selesai semua ${group.jumlah_periode} periode. Terima kasih!` : `Periode ${period.periode_ke} telah ditutup. Selamat datang di periode ${period.periode_ke + 1}!`,
-        { group_id: groupId }
+        { type: "period_closed", group_id: groupId }
       ).catch(() => {
       });
     }
@@ -100412,9 +100437,14 @@ groupsRoute.delete("/:id/members/:memberId", async (c) => {
   if (!membership) return c.json({ error: "Anggota tidak ditemukan di grup ini" }, 404);
   const isActive = !await isGroupEditable(groupId);
   if (isActive) {
-    const { data: activePeriod } = await supabase.from("periods").select("id").eq("group_id", groupId).eq("status", "active").maybeSingle();
-    if (activePeriod) {
-      await supabase.from("payments").delete().eq("period_id", activePeriod.id).eq("user_id", memberId).eq("status", "pending");
+    const { data: activePeriods } = await supabase.from("periods").select("id").eq("group_id", groupId).eq("status", "active");
+    for (const p of activePeriods ?? []) {
+      const { data: existing } = await supabase.from("payments").select("id, status").eq("period_id", p.id).eq("user_id", memberId).maybeSingle();
+      if (!existing) {
+        await supabase.from("payments").insert({ period_id: p.id, user_id: memberId, status: "late" });
+      } else if (existing.status === "pending") {
+        await supabase.from("payments").update({ status: "late" }).eq("id", existing.id);
+      }
     }
   }
   await supabase.from("group_members").delete().eq("group_id", groupId).eq("user_id", memberId);
@@ -100425,7 +100455,7 @@ groupsRoute.delete("/:id/members/:memberId", async (c) => {
     memberId,
     "Kamu Dikeluarkan dari Grup",
     `Kamu telah dikeluarkan dari grup arisan "${group.name}" oleh ketua.`,
-    { group_id: groupId }
+    { type: "member_kicked", group_id: groupId }
   ).catch(() => {
   });
   return c.json({
@@ -100693,8 +100723,13 @@ var undianRoute = new Hono2();
 undianRoute.use("*", jwtAuth);
 undianRoute.get("/:id/winners", async (c) => {
   const groupId = c.req.param("id");
-  const { data } = await supabase.from("winners").select("id, user_id, created_at, period_id, periods(periode_ke), users(name, phone)").eq("group_id", groupId).order("created_at", { ascending: false });
-  return c.json({ winners: data ?? [] });
+  const [{ data }, { data: group }] = await Promise.all([
+    supabase.from("winners").select("id, user_id, created_at, period_id, periods(periode_ke), users(name, phone)").eq("group_id", groupId).order("created_at", { ascending: false }),
+    supabase.from("groups").select("nominal, jumlah_periode").eq("id", groupId).single()
+  ]);
+  const arisanAmount = group ? group.nominal * group.jumlah_periode : 0;
+  const winners = (data ?? []).map((w) => ({ ...w, arisan_amount: arisanAmount }));
+  return c.json({ winners });
 });
 var undianSchema = external_exports.discriminatedUnion("mode", [
   external_exports.object({ mode: external_exports.literal("fixed"), period_id: external_exports.string().uuid() }),
@@ -100709,10 +100744,15 @@ undianRoute.post("/:id/undian", zValidator("json", undianSchema), async (c) => {
   const ketuaId = c.get("userId");
   const groupId = c.req.param("id");
   const body = c.req.valid("json");
-  const { data: group } = await supabase.from("groups").select("ketua_id, name").eq("id", groupId).single();
+  const { data: group } = await supabase.from("groups").select("ketua_id, name, mode_undian").eq("id", groupId).single();
   if (!group) return c.json({ error: "Grup tidak ditemukan" }, 404);
   if (group.ketua_id !== ketuaId)
     return c.json({ error: "Hanya ketua yang bisa melakukan undian" }, 403);
+  if (body.mode !== group.mode_undian)
+    return c.json(
+      { error: `Mode undian tidak sesuai. Grup ini menggunakan mode "${group.mode_undian}".` },
+      400
+    );
   const { data: period } = await supabase.from("periods").select("id, periode_ke, status").eq("id", body.period_id).eq("group_id", groupId).single();
   if (!period) return c.json({ error: "Periode tidak ditemukan" }, 404);
   if (period.status !== "active") return c.json({ error: "Periode tidak aktif" }, 400);
@@ -100792,10 +100832,15 @@ async function createSwapRequest(requesterId, targetId, groupId) {
   }
   const { data: swap, error: error51 } = await supabase.from("swap_requests").insert({ group_id: groupId, requester_id: requesterId, target_id: targetId }).select().single();
   if (error51 || !swap) return { error: "Gagal membuat permintaan tukar giliran" };
-  await sendWA(
+  await sendWA(targetId, `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`);
+  insertNotification(
     targetId,
-    `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`
-  );
+    "swap_request",
+    "Permintaan Tukar Giliran",
+    "Ada anggota yang ingin menukar giliran arisan dengan kamu. Buka aplikasi untuk merespons.",
+    { group_id: groupId, swap_id: swap.id }
+  ).catch(() => {
+  });
   return { swap };
 }
 async function respondSwap(swapId, targetId, response) {
