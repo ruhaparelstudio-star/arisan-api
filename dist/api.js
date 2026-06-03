@@ -90353,6 +90353,16 @@ function zValidatorFunction(target, schema, hook, options) {
 }
 var zValidator = zValidatorFunction;
 
+// src/utils/zv.ts
+function zv(target, schema) {
+  return zValidator(target, schema, (result, c) => {
+    if (!result.success) {
+      const msg = result.error.issues[0]?.message ?? "Validasi gagal";
+      return c.json({ error: msg }, 400);
+    }
+  });
+}
+
 // src/routes/auth.ts
 var import_jsonwebtoken = require("jsonwebtoken");
 
@@ -99351,7 +99361,7 @@ var verifySchema = external_exports.object({
 var TEST_PHONE_PREFIX = "+628560000100";
 var TEST_OTP_CODE = "123456";
 var isTestPhone = (phone) => (process.env.NODE_ENV === "development" || process.env.ENABLE_TEST_BYPASS === "true") && phone.startsWith(TEST_PHONE_PREFIX);
-authRoute.post("/send-otp", zValidator("json", sendSchema), async (c) => {
+authRoute.post("/send-otp", zv("json", sendSchema), async (c) => {
   const { phone } = c.req.valid("json");
   if (isTestPhone(phone)) {
     await saveOTP(phone, TEST_OTP_CODE);
@@ -99371,7 +99381,7 @@ authRoute.post("/send-otp", zValidator("json", sendSchema), async (c) => {
   logger.info("OTP sent", { phone: maskPhone(phone) });
   return c.json({ message: "OTP berhasil dikirim ke WhatsApp kamu" });
 });
-authRoute.post("/verify-otp", zValidator("json", verifySchema), async (c) => {
+authRoute.post("/verify-otp", zv("json", verifySchema), async (c) => {
   const { phone, code } = c.req.valid("json");
   const verification = await verifyOTP(phone, code);
   if (!verification.valid) {
@@ -99437,7 +99447,7 @@ usersRoute.get("/me", async (c) => {
 });
 usersRoute.put(
   "/me",
-  zValidator("json", external_exports.object({ name: external_exports.string().min(2).max(100) })),
+  zv("json", external_exports.object({ name: external_exports.string().min(2).max(100) })),
   async (c) => {
     const userId = c.get("userId");
     const { name } = c.req.valid("json");
@@ -99471,7 +99481,7 @@ usersRoute.get("/me/stats", async (c) => {
 });
 usersRoute.put(
   "/push-token",
-  zValidator("json", external_exports.object({ expo_push_token: external_exports.string() })),
+  zv("json", external_exports.object({ expo_push_token: external_exports.string() })),
   async (c) => {
     const userId = c.get("userId");
     const { expo_push_token } = c.req.valid("json");
@@ -99893,7 +99903,7 @@ var createSchema = external_exports.object({
   jumlah_periode: external_exports.number().int().min(2).max(100),
   mode_undian: external_exports.enum(["fixed", "random", "manual"])
 });
-groupsRoute.post("/", zValidator("json", createSchema), async (c) => {
+groupsRoute.post("/", zv("json", createSchema), async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
   const { data: userRecord } = await supabase.from("users").select("name").eq("id", userId).single();
@@ -99944,7 +99954,7 @@ groupsRoute.get("/code/:code", async (c) => {
 });
 groupsRoute.post(
   "/join",
-  zValidator("json", external_exports.object({ invite_code: external_exports.string().length(8).toUpperCase() })),
+  zv("json", external_exports.object({ invite_code: external_exports.string().length(8).toUpperCase() })),
   async (c) => {
     const userId = c.get("userId");
     const { invite_code } = c.req.valid("json");
@@ -99997,7 +100007,7 @@ groupsRoute.get("/:id", async (c) => {
 });
 groupsRoute.put(
   "/:id/urutan",
-  zValidator("json", external_exports.object({ urutan: external_exports.array(external_exports.string().uuid()) })),
+  zv("json", external_exports.object({ urutan: external_exports.array(external_exports.string().uuid()) })),
   async (c) => {
     const userId = c.get("userId");
     const groupId = c.req.param("id");
@@ -100108,7 +100118,7 @@ groupsRoute.get("/:id/hutang", async (c) => {
 });
 groupsRoute.post(
   "/:id/kabur/:memberId/resolve",
-  zValidator("json", external_exports.object({ mode: external_exports.enum(["kick_writeoff", "netting"]) })),
+  zv("json", external_exports.object({ mode: external_exports.enum(["kick_writeoff", "netting"]) })),
   async (c) => {
     const ketuaId = c.get("userId");
     const groupId = c.req.param("id");
@@ -100385,7 +100395,7 @@ groupsRoute.get("/:id/activity-log", async (c) => {
 });
 groupsRoute.put(
   "/:groupId/periods/:periodId/tanggal",
-  zValidator("json", external_exports.object({ tanggal_pelaksanaan: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  zv("json", external_exports.object({ tanggal_pelaksanaan: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
   async (c) => {
     const userId = c.get("userId");
     const groupId = c.req.param("groupId");
@@ -100494,7 +100504,7 @@ groupsRoute.delete("/:id", async (c) => {
 });
 groupsRoute.post(
   "/:groupId/messages",
-  zValidator("json", external_exports.object({ content: external_exports.string().min(1).max(500) })),
+  zv("json", external_exports.object({ content: external_exports.string().min(1).max(500) })),
   async (c) => {
     const userId = c.get("userId");
     const groupId = c.req.param("groupId");
@@ -100561,6 +100571,8 @@ async function confirmPayment(periodId, memberId, confirmedBy) {
   const { data: group } = await supabase.from("groups").select("ketua_id").eq("id", period.group_id).single();
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: "Hanya ketua yang bisa konfirmasi pembayaran" };
+  const { data: existing } = await supabase.from("payments").select("status").eq("period_id", periodId).eq("user_id", memberId).maybeSingle();
+  const isNew = !existing || existing.status !== "confirmed";
   await supabase.from("payments").upsert(
     {
       period_id: periodId,
@@ -100571,7 +100583,7 @@ async function confirmPayment(periodId, memberId, confirmedBy) {
     },
     { onConflict: "period_id,user_id" }
   );
-  return { success: true };
+  return { success: true, isNew };
 }
 async function cancelConfirmPayment(periodId, memberId, confirmedBy) {
   const { data: period } = await supabase.from("periods").select("group_id, status").eq("id", periodId).single();
@@ -100657,27 +100669,29 @@ paymentsRoute.get("/:groupId/:periodId", async (c) => {
   const data = await getPeriodPaymentStatus(periodId);
   return c.json({ payments: data });
 });
-paymentsRoute.post("/:groupId/:periodId/confirm", zValidator("json", confirmSchema), async (c) => {
+paymentsRoute.post("/:groupId/:periodId/confirm", zv("json", confirmSchema), async (c) => {
   const confirmedBy = c.get("userId");
   const { groupId, periodId } = c.req.param();
   const { member_id } = c.req.valid("json");
   const result = await confirmPayment(periodId, member_id, confirmedBy);
   if (!result.success) return c.json({ error: result.reason }, 400);
   await logActivity(groupId, confirmedBy, "payment_confirmed", "Pembayaran anggota dikonfirmasi");
-  const { data: period } = await supabase.from("periods").select("periode_ke").eq("id", periodId).single();
-  insertNotification(
-    member_id,
-    "payment_confirmed",
-    "Pembayaran Dikonfirmasi",
-    `Pembayaran kamu untuk periode ${period?.periode_ke ?? ""} telah dikonfirmasi ketua.`,
-    { group_id: groupId, period_id: periodId }
-  ).catch(() => {
-  });
+  if (result.isNew) {
+    const { data: period } = await supabase.from("periods").select("periode_ke").eq("id", periodId).single();
+    insertNotification(
+      member_id,
+      "payment_confirmed",
+      "Pembayaran Dikonfirmasi",
+      `Pembayaran kamu untuk periode ${period?.periode_ke ?? ""} telah dikonfirmasi ketua.`,
+      { group_id: groupId, period_id: periodId }
+    ).catch(() => {
+    });
+  }
   return c.json({ message: "Pembayaran berhasil dikonfirmasi" });
 });
 paymentsRoute.delete(
   "/:groupId/:periodId/confirm",
-  zValidator("json", confirmSchema),
+  zv("json", confirmSchema),
   async (c) => {
     const confirmedBy = c.get("userId");
     const { groupId, periodId } = c.req.param();
@@ -100747,7 +100761,7 @@ var undianSchema = external_exports.discriminatedUnion("mode", [
     winner_id: external_exports.string().uuid()
   })
 ]);
-undianRoute.post("/:id/undian", zValidator("json", undianSchema), async (c) => {
+undianRoute.post("/:id/undian", zv("json", undianSchema), async (c) => {
   const ketuaId = c.get("userId");
   const groupId = c.req.param("id");
   const body = c.req.valid("json");
@@ -100987,7 +101001,7 @@ swapsRoute.get("/group/:groupId", async (c) => {
 });
 swapsRoute.post(
   "/ketua",
-  zValidator(
+  zv(
     "json",
     external_exports.object({
       member_a_id: external_exports.string().uuid(),
@@ -101011,7 +101025,7 @@ swapsRoute.post(
 );
 swapsRoute.post(
   "/",
-  zValidator(
+  zv(
     "json",
     external_exports.object({
       target_id: external_exports.string().uuid(),
@@ -101046,7 +101060,7 @@ swapsRoute.post(
 );
 swapsRoute.post(
   "/:id/respond",
-  zValidator("json", external_exports.object({ response: external_exports.enum(["accepted", "rejected"]) })),
+  zv("json", external_exports.object({ response: external_exports.enum(["accepted", "rejected"]) })),
   async (c) => {
     const targetId = c.get("userId");
     const swapId = c.req.param("id");
@@ -101058,7 +101072,7 @@ swapsRoute.post(
 );
 swapsRoute.post(
   "/:id/approve",
-  zValidator("json", external_exports.object({ decision: external_exports.enum(["approved", "ketua_rejected"]) })),
+  zv("json", external_exports.object({ decision: external_exports.enum(["approved", "ketua_rejected"]) })),
   async (c) => {
     const ketuaId = c.get("userId");
     const swapId = c.req.param("id");
@@ -101245,7 +101259,7 @@ adminRoute.get("/stats/overview", async (c) => {
 });
 adminRoute.get(
   "/users",
-  zValidator(
+  zv(
     "query",
     external_exports.object({
       page: external_exports.coerce.number().int().min(1).default(1),
@@ -101343,7 +101357,7 @@ adminRoute.delete("/users/:id", async (c) => {
 });
 adminRoute.get(
   "/groups",
-  zValidator(
+  zv(
     "query",
     external_exports.object({
       page: external_exports.coerce.number().int().min(1).default(1),

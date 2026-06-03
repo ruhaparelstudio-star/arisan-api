@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { jwtAuth } from '../middleware/auth';
 import * as ps from '../services/payments';
 import { logActivity } from '../services/groups';
@@ -32,7 +32,7 @@ paymentsRoute.get('/:groupId/:periodId', async (c) => {
   return c.json({ payments: data });
 });
 
-paymentsRoute.post('/:groupId/:periodId/confirm', zValidator('json', confirmSchema), async (c) => {
+paymentsRoute.post('/:groupId/:periodId/confirm', zv('json', confirmSchema), async (c) => {
   const confirmedBy = c.get('userId');
   const { groupId, periodId } = c.req.param();
   const { member_id } = c.req.valid('json');
@@ -42,40 +42,33 @@ paymentsRoute.post('/:groupId/:periodId/confirm', zValidator('json', confirmSche
 
   await logActivity(groupId, confirmedBy, 'payment_confirmed', 'Pembayaran anggota dikonfirmasi');
 
-  // Notifikasi ke user yang dibayar — tidak throw jika gagal
-  const { data: period } = await supabase
-    .from('periods')
-    .select('periode_ke')
-    .eq('id', periodId)
-    .single();
-  insertNotification(
-    member_id,
-    'payment_confirmed',
-    'Pembayaran Dikonfirmasi',
-    `Pembayaran kamu untuk periode ${period?.periode_ke ?? ''} telah dikonfirmasi ketua.`,
-    { group_id: groupId, period_id: periodId }
-  ).catch(() => {});
+  // Notifikasi hanya untuk konfirmasi baru (bukan re-konfirmasi upsert)
+  if (result.isNew) {
+    const { data: period } = await supabase
+      .from('periods')
+      .select('periode_ke')
+      .eq('id', periodId)
+      .single();
+    insertNotification(
+      member_id,
+      'payment_confirmed',
+      'Pembayaran Dikonfirmasi',
+      `Pembayaran kamu untuk periode ${period?.periode_ke ?? ''} telah dikonfirmasi ketua.`,
+      { group_id: groupId, period_id: periodId }
+    ).catch(() => {});
+  }
 
   return c.json({ message: 'Pembayaran berhasil dikonfirmasi' });
 });
 
-paymentsRoute.delete(
-  '/:groupId/:periodId/confirm',
-  zValidator('json', confirmSchema),
-  async (c) => {
-    const confirmedBy = c.get('userId');
-    const { groupId, periodId } = c.req.param();
-    const { member_id } = c.req.valid('json');
+paymentsRoute.delete('/:groupId/:periodId/confirm', zv('json', confirmSchema), async (c) => {
+  const confirmedBy = c.get('userId');
+  const { groupId, periodId } = c.req.param();
+  const { member_id } = c.req.valid('json');
 
-    const result = await ps.cancelConfirmPayment(periodId, member_id, confirmedBy);
-    if (!result.success) return c.json({ error: result.reason }, 400);
+  const result = await ps.cancelConfirmPayment(periodId, member_id, confirmedBy);
+  if (!result.success) return c.json({ error: result.reason }, 400);
 
-    await logActivity(
-      groupId,
-      confirmedBy,
-      'payment_cancelled',
-      'Konfirmasi pembayaran dibatalkan'
-    );
-    return c.json({ message: 'Konfirmasi pembayaran dibatalkan' });
-  }
-);
+  await logActivity(groupId, confirmedBy, 'payment_cancelled', 'Konfirmasi pembayaran dibatalkan');
+  return c.json({ message: 'Konfirmasi pembayaran dibatalkan' });
+});

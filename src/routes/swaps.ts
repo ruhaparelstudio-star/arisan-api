@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { jwtAuth } from '../middleware/auth';
 import { supabase } from '../db/supabase';
 import * as ss from '../services/swaps';
@@ -54,7 +54,7 @@ swapsRoute.get('/group/:groupId', async (c) => {
 // Harus sebelum POST / agar tidak tertangkap route '/'
 swapsRoute.post(
   '/ketua',
-  zValidator(
+  zv(
     'json',
     z.object({
       member_a_id: z.string().uuid(),
@@ -83,7 +83,7 @@ swapsRoute.post(
 // POST /api/swaps
 swapsRoute.post(
   '/',
-  zValidator(
+  zv(
     'json',
     z.object({
       target_id: z.string().uuid(),
@@ -143,7 +143,7 @@ swapsRoute.post(
 // POST /api/swaps/:id/respond
 swapsRoute.post(
   '/:id/respond',
-  zValidator('json', z.object({ response: z.enum(['accepted', 'rejected']) })),
+  zv('json', z.object({ response: z.enum(['accepted', 'rejected']) })),
   async (c) => {
     const targetId = c.get('userId');
     const swapId = c.req.param('id');
@@ -159,7 +159,7 @@ swapsRoute.post(
 // POST /api/swaps/:id/approve
 swapsRoute.post(
   '/:id/approve',
-  zValidator('json', z.object({ decision: z.enum(['approved', 'ketua_rejected']) })),
+  zv('json', z.object({ decision: z.enum(['approved', 'ketua_rejected']) })),
   async (c) => {
     const ketuaId = c.get('userId');
     const swapId = c.req.param('id');

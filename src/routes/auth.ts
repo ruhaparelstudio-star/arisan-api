@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { sign } from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
 import * as otpService from '../services/otp';
@@ -25,7 +25,7 @@ const isTestPhone = (phone: string) =>
   (process.env.NODE_ENV === 'development' || process.env.ENABLE_TEST_BYPASS === 'true') &&
   phone.startsWith(TEST_PHONE_PREFIX);
 
-authRoute.post('/send-otp', zValidator('json', sendSchema), async (c) => {
+authRoute.post('/send-otp', zv('json', sendSchema), async (c) => {
   const { phone } = c.req.valid('json');
 
   // Dev sandbox: nomor test skip Fonnte, pakai OTP tetap "123456"
@@ -52,7 +52,7 @@ authRoute.post('/send-otp', zValidator('json', sendSchema), async (c) => {
   return c.json({ message: 'OTP berhasil dikirim ke WhatsApp kamu' });
 });
 
-authRoute.post('/verify-otp', zValidator('json', verifySchema), async (c) => {
+authRoute.post('/verify-otp', zv('json', verifySchema), async (c) => {
   const { phone, code } = c.req.valid('json');
 
   const verification = await otpService.verifyOTP(phone, code);

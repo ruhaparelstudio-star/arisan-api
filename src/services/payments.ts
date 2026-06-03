@@ -27,6 +27,15 @@ export async function confirmPayment(periodId: string, memberId: string, confirm
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: 'Hanya ketua yang bisa konfirmasi pembayaran' };
 
+  const { data: existing } = await supabase
+    .from('payments')
+    .select('status')
+    .eq('period_id', periodId)
+    .eq('user_id', memberId)
+    .maybeSingle();
+
+  const isNew = !existing || existing.status !== 'confirmed';
+
   await supabase.from('payments').upsert(
     {
       period_id: periodId,
@@ -38,7 +47,7 @@ export async function confirmPayment(periodId: string, memberId: string, confirm
     { onConflict: 'period_id,user_id' }
   );
 
-  return { success: true };
+  return { success: true, isNew };
 }
 
 export async function cancelConfirmPayment(

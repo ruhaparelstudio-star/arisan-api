@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { StreamChat } from 'stream-chat';
 import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
@@ -50,7 +50,7 @@ adminRoute.get('/stats/overview', async (c) => {
 // GET /admin/users?page=1&limit=20&search=&status=
 adminRoute.get(
   '/users',
-  zValidator(
+  zv(
     'query',
     z.object({
       page: z.coerce.number().int().min(1).default(1),
@@ -201,7 +201,7 @@ adminRoute.delete('/users/:id', async (c) => {
 // GET /admin/groups?page=1&status=
 adminRoute.get(
   '/groups',
-  zValidator(
+  zv(
     'query',
     z.object({
       page: z.coerce.number().int().min(1).default(1),

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { jwtAuth } from '../middleware/auth';
 import * as gs from '../services/groups';
 import {
@@ -25,7 +25,7 @@ const createSchema = z.object({
 });
 
 // POST /api/groups
-groupsRoute.post('/', zValidator('json', createSchema), async (c) => {
+groupsRoute.post('/', zv('json', createSchema), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
 
@@ -105,7 +105,7 @@ groupsRoute.get('/code/:code', async (c) => {
 // POST /api/groups/join — harus sebelum /:id agar tidak ditangkap sebagai param
 groupsRoute.post(
   '/join',
-  zValidator('json', z.object({ invite_code: z.string().length(8).toUpperCase() })),
+  zv('json', z.object({ invite_code: z.string().length(8).toUpperCase() })),
   async (c) => {
     const userId = c.get('userId');
     const { invite_code } = c.req.valid('json');
@@ -212,7 +212,7 @@ groupsRoute.get('/:id', async (c) => {
 // PUT /api/groups/:id/urutan
 groupsRoute.put(
   '/:id/urutan',
-  zValidator('json', z.object({ urutan: z.array(z.string().uuid()) })),
+  zv('json', z.object({ urutan: z.array(z.string().uuid()) })),
   async (c) => {
     const userId = c.get('userId');
     const groupId = c.req.param('id');
@@ -408,7 +408,7 @@ groupsRoute.get('/:id/hutang', async (c) => {
 // mode: 'kick_writeoff' (kick + catat kerugian) | 'netting' (offset hutang dengan pembayaran sebelumnya)
 groupsRoute.post(
   '/:id/kabur/:memberId/resolve',
-  zValidator('json', z.object({ mode: z.enum(['kick_writeoff', 'netting']) })),
+  zv('json', z.object({ mode: z.enum(['kick_writeoff', 'netting']) })),
   async (c) => {
     const ketuaId = c.get('userId');
     const groupId = c.req.param('id');
@@ -864,7 +864,7 @@ groupsRoute.get('/:id/activity-log', async (c) => {
 // Ketua bisa kapan saja. Pemenang undian periode ini bisa isi jika tanggal belum diset.
 groupsRoute.put(
   '/:groupId/periods/:periodId/tanggal',
-  zValidator('json', z.object({ tanggal_pelaksanaan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  zv('json', z.object({ tanggal_pelaksanaan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
   async (c) => {
     const userId = c.get('userId');
     const groupId = c.req.param('groupId');
@@ -1064,7 +1064,7 @@ groupsRoute.delete('/:id', async (c) => {
 // POST /api/groups/:groupId/messages
 groupsRoute.post(
   '/:groupId/messages',
-  zValidator('json', z.object({ content: z.string().min(1).max(500) })),
+  zv('json', z.object({ content: z.string().min(1).max(500) })),
   async (c) => {
     const userId = c.get('userId');
     const groupId = c.req.param('groupId');

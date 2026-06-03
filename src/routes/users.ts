@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { jwtAuth } from '../middleware/auth';
 import { supabase } from '../db/supabase';
 
@@ -20,16 +20,12 @@ usersRoute.get('/me', async (c) => {
   return c.json({ user: data });
 });
 
-usersRoute.put(
-  '/me',
-  zValidator('json', z.object({ name: z.string().min(2).max(100) })),
-  async (c) => {
-    const userId = c.get('userId');
-    const { name } = c.req.valid('json');
-    await supabase.from('users').update({ name }).eq('id', userId);
-    return c.json({ message: 'Profil berhasil diperbarui' });
-  }
-);
+usersRoute.put('/me', zv('json', z.object({ name: z.string().min(2).max(100) })), async (c) => {
+  const userId = c.get('userId');
+  const { name } = c.req.valid('json');
+  await supabase.from('users').update({ name }).eq('id', userId);
+  return c.json({ message: 'Profil berhasil diperbarui' });
+});
 
 usersRoute.delete('/me', async (c) => {
   const userId = c.get('userId');
@@ -78,15 +74,11 @@ usersRoute.get('/me/stats', async (c) => {
   return c.json({ group_count: groupCount, total_iuran: totalIuran, win_count: winCount });
 });
 
-usersRoute.put(
-  '/push-token',
-  zValidator('json', z.object({ expo_push_token: z.string() })),
-  async (c) => {
-    const userId = c.get('userId');
-    const { expo_push_token } = c.req.valid('json');
-    await supabase
-      .from('push_tokens')
-      .upsert({ user_id: userId, expo_push_token, updated_at: new Date() });
-    return c.json({ message: 'Push token tersimpan' });
-  }
-);
+usersRoute.put('/push-token', zv('json', z.object({ expo_push_token: z.string() })), async (c) => {
+  const userId = c.get('userId');
+  const { expo_push_token } = c.req.valid('json');
+  await supabase
+    .from('push_tokens')
+    .upsert({ user_id: userId, expo_push_token, updated_at: new Date() });
+  return c.json({ message: 'Push token tersimpan' });
+});
