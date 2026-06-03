@@ -104,7 +104,7 @@ undianRoute.post('/:id/undian', zValidator('json', undianSchema), async (c) => {
       .select('name, phone')
       .eq('id', winnerId)
       .single();
-    winnerName = winnerUser?.name || winnerUser?.phone || 'anggota';
+    winnerName = winnerUser?.name || 'anggota grup';
   } else {
     // manual
     const { data: manualUser } = await supabase
