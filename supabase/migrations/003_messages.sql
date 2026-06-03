@@ -16,5 +16,12 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_group_created ON messages(group_id, created_at DESC);
 
--- Enable Supabase Realtime untuk tabel ini
-ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+-- Enable Supabase Realtime (idempoten — skip jika sudah ada)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+  END IF;
+END $$;
