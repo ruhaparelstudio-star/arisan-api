@@ -169,19 +169,37 @@ groupsRoute.get('/:id', async (c) => {
     .single();
   if (!membership) return c.json({ error: 'Kamu bukan anggota grup ini' }, 403);
 
-  const { data: group } = await supabase.from('groups').select('*').eq('id', groupId).single();
-  const { data: members } = await supabase
-    .from('group_members')
-    .select('user_id, urutan, users(id, name, phone)')
-    .eq('group_id', groupId)
-    .order('urutan');
+  const [{ data: group }, { data: rawMembers }, { data: activePeriod }, { data: swapCounts }] =
+    await Promise.all([
+      supabase.from('groups').select('*').eq('id', groupId).single(),
+      supabase
+        .from('group_members')
+        .select('user_id, urutan, users(id, name, phone)')
+        .eq('group_id', groupId)
+        .order('urutan'),
+      supabase
+        .from('periods')
+        .select('id, periode_ke')
+        .eq('group_id', groupId)
+        .eq('status', 'active')
+        .maybeSingle(),
+      supabase
+        .from('swap_requests')
+        .select('requester_id')
+        .eq('group_id', groupId)
+        .eq('status', 'approved'),
+    ]);
 
-  const { data: activePeriod } = await supabase
-    .from('periods')
-    .select('id, periode_ke')
-    .eq('group_id', groupId)
-    .eq('status', 'active')
-    .maybeSingle();
+  // Hitung jumlah_tukar (approved swaps) per user
+  const swapCountMap: Record<string, number> = {};
+  for (const s of swapCounts ?? []) {
+    swapCountMap[s.requester_id] = (swapCountMap[s.requester_id] ?? 0) + 1;
+  }
+
+  const members = (rawMembers ?? []).map((m) => ({
+    ...m,
+    jumlah_tukar: swapCountMap[m.user_id] ?? 0,
+  }));
 
   return c.json({
     group,
@@ -228,7 +246,7 @@ groupsRoute.post('/:id/start', async (c) => {
 
   const { data: group } = await supabase
     .from('groups')
-    .select('ketua_id, status, jumlah_periode, name')
+    .select('ketua_id, status, jumlah_periode, name, mode_undian')
     .eq('id', groupId)
     .single();
   if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
@@ -237,12 +255,24 @@ groupsRoute.post('/:id/start', async (c) => {
   if (group.status !== 'recruiting')
     return c.json({ error: 'Grup sudah dimulai atau tidak aktif' }, 400);
 
-  const { count: memberCount } = await supabase
+  const { data: members, count: memberCount } = await supabase
     .from('group_members')
-    .select('*', { count: 'exact', head: true })
+    .select('user_id, urutan', { count: 'exact' })
     .eq('group_id', groupId);
   if ((memberCount ?? 0) < 2)
     return c.json({ error: 'Minimal 2 anggota untuk memulai arisan' }, 400);
+
+  // Mode fixed: semua anggota wajib punya urutan sebelum arisan dimulai
+  if (group.mode_undian === 'fixed') {
+    const missingUrutan = (members ?? []).filter((m) => m.urutan == null);
+    if (missingUrutan.length > 0)
+      return c.json(
+        {
+          error: `Mode undian "fixed" memerlukan semua anggota memiliki urutan. ${missingUrutan.length} anggota belum diatur urutannya. Atur giliran terlebih dahulu.`,
+        },
+        400
+      );
+  }
 
   // Update status grup → active
   await supabase.from('groups').update({ status: 'active' }).eq('id', groupId);
@@ -772,7 +802,7 @@ groupsRoute.post('/:id/periods/:periodId/close', async (c) => {
         groupCompleted
           ? `Arisan "${group.name}" telah selesai semua ${group.jumlah_periode} periode. Terima kasih!`
           : `Periode ${period.periode_ke} telah ditutup. Selamat datang di periode ${period.periode_ke + 1}!`,
-        { group_id: groupId }
+        { type: 'period_closed', group_id: groupId }
       ).catch(() => {});
     }
   })();
@@ -939,22 +969,32 @@ groupsRoute.delete('/:id/members/:memberId', async (c) => {
   const isActive = !(await gs.isGroupEditable(groupId));
 
   if (isActive) {
-    // Arisan sedang berjalan — hapus payment pending yang belum dikonfirmasi
-    // (history late/confirmed tetap untuk audit trail)
-    const { data: activePeriod } = await supabase
+    // Arisan sedang berjalan — tandai semua periode active yang belum ada payment record sebagai late
+    // agar hutang anggota tercatat di audit trail sebelum dihapus dari grup
+    const { data: activePeriods } = await supabase
       .from('periods')
       .select('id')
       .eq('group_id', groupId)
-      .eq('status', 'active')
-      .maybeSingle();
+      .eq('status', 'active');
 
-    if (activePeriod) {
-      await supabase
+    for (const p of activePeriods ?? []) {
+      const { data: existing } = await supabase
         .from('payments')
-        .delete()
-        .eq('period_id', activePeriod.id)
+        .select('id, status')
+        .eq('period_id', p.id)
         .eq('user_id', memberId)
-        .eq('status', 'pending');
+        .maybeSingle();
+
+      if (!existing) {
+        // Belum ada record — buat langsung sebagai late
+        await supabase
+          .from('payments')
+          .insert({ period_id: p.id, user_id: memberId, status: 'late' });
+      } else if (existing.status === 'pending') {
+        // Pending → tandai late
+        await supabase.from('payments').update({ status: 'late' }).eq('id', existing.id);
+      }
+      // confirmed/late tetap tidak diubah (audit trail)
     }
   }
 
@@ -972,7 +1012,7 @@ groupsRoute.delete('/:id/members/:memberId', async (c) => {
     memberId,
     'Kamu Dikeluarkan dari Grup',
     `Kamu telah dikeluarkan dari grup arisan "${group.name}" oleh ketua.`,
-    { group_id: groupId }
+    { type: 'member_kicked', group_id: groupId }
   ).catch(() => {});
 
   return c.json({

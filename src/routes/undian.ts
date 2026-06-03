@@ -16,12 +16,20 @@ undianRoute.use('*', jwtAuth);
 // GET /api/groups/:id/winners — riwayat pemenang
 undianRoute.get('/:id/winners', async (c) => {
   const groupId = c.req.param('id');
-  const { data } = await supabase
-    .from('winners')
-    .select('id, user_id, created_at, period_id, periods(periode_ke), users(name, phone)')
-    .eq('group_id', groupId)
-    .order('created_at', { ascending: false });
-  return c.json({ winners: data ?? [] });
+
+  const [{ data }, { data: group }] = await Promise.all([
+    supabase
+      .from('winners')
+      .select('id, user_id, created_at, period_id, periods(periode_ke), users(name, phone)')
+      .eq('group_id', groupId)
+      .order('created_at', { ascending: false }),
+    supabase.from('groups').select('nominal, jumlah_periode').eq('id', groupId).single(),
+  ]);
+
+  const arisanAmount = group ? group.nominal * group.jumlah_periode : 0;
+
+  const winners = (data ?? []).map((w) => ({ ...w, arisan_amount: arisanAmount }));
+  return c.json({ winners });
 });
 
 const undianSchema = z.discriminatedUnion('mode', [
@@ -43,13 +51,18 @@ undianRoute.post('/:id/undian', zValidator('json', undianSchema), async (c) => {
   // Validasi grup dan ketua
   const { data: group } = await supabase
     .from('groups')
-    .select('ketua_id, name')
+    .select('ketua_id, name, mode_undian')
     .eq('id', groupId)
     .single();
 
   if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
   if (group.ketua_id !== ketuaId)
     return c.json({ error: 'Hanya ketua yang bisa melakukan undian' }, 403);
+  if (body.mode !== group.mode_undian)
+    return c.json(
+      { error: `Mode undian tidak sesuai. Grup ini menggunakan mode "${group.mode_undian}".` },
+      400
+    );
 
   // Validasi periode aktif
   const { data: period } = await supabase
