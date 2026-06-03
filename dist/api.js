@@ -99987,8 +99987,7 @@ groupsRoute.put(
     const { data: group } = await supabase.from("groups").select("ketua_id, status").eq("id", groupId).single();
     if (!group || group.ketua_id !== userId)
       return c.json({ error: "Hanya ketua yang bisa mengatur giliran" }, 403);
-    if (group.status === "disbanded")
-      return c.json({ error: "Grup sudah dibubarkan" }, 400);
+    if (group.status === "disbanded") return c.json({ error: "Grup sudah dibubarkan" }, 400);
     for (let i = 0; i < urutan.length; i++) {
       await supabase.from("group_members").update({ urutan: i + 1 }).eq("group_id", groupId).eq("user_id", urutan[i]);
     }
@@ -100267,14 +100266,18 @@ groupsRoute.post("/:id/periods/:periodId/close", async (c) => {
   if (!group) return c.json({ error: "Grup tidak ditemukan" }, 404);
   if (group.ketua_id !== userId)
     return c.json({ error: "Hanya ketua yang bisa menutup periode" }, 403);
-  if (group.status !== "active")
-    return c.json({ error: "Grup tidak aktif" }, 400);
+  if (group.status !== "active") return c.json({ error: "Grup tidak aktif" }, 400);
   const { data: period } = await supabase.from("periods").select("id, periode_ke, status").eq("id", periodId).eq("group_id", groupId).single();
   if (!period) return c.json({ error: "Periode tidak ditemukan" }, 404);
   if (period.status !== "active") return c.json({ error: "Periode tidak sedang aktif" }, 400);
   const { data: winner } = await supabase.from("winners").select("id").eq("period_id", periodId).eq("group_id", groupId).maybeSingle();
   if (!winner)
-    return c.json({ error: "Undian periode ini belum dilakukan. Lakukan undian dahulu sebelum menutup periode." }, 400);
+    return c.json(
+      {
+        error: "Undian periode ini belum dilakukan. Lakukan undian dahulu sebelum menutup periode."
+      },
+      400
+    );
   const { data: members } = await supabase.from("group_members").select("user_id").eq("group_id", groupId);
   const { data: confirmedPayments } = await supabase.from("payments").select("user_id").eq("period_id", periodId).eq("status", "confirmed");
   const memberCount = members?.length ?? 0;
