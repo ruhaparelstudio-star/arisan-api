@@ -100708,7 +100708,11 @@ async function undianRandom(groupId) {
     logger.error("undianRandom RPC failed", { groupId, error: error51 });
     return null;
   }
-  return data;
+  if (data) return data;
+  const { data: members } = await supabase.from("group_members").select("user_id").eq("group_id", groupId);
+  if (!members?.length) return null;
+  const idx = Math.floor(Math.random() * members.length);
+  return members[idx].user_id;
 }
 async function undianManual(winnerId) {
   return { user_id: winnerId };

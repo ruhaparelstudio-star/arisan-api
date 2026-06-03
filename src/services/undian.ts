@@ -38,7 +38,17 @@ export async function undianRandom(groupId: string): Promise<string | null> {
     logger.error('undianRandom RPC failed', { groupId, error });
     return null;
   }
-  return data as string | null;
+  if (data) return data as string;
+
+  // Fallback: semua anggota sudah pernah menang (multi-putaran arisan).
+  // Pilih acak dari semua anggota aktif.
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId);
+  if (!members?.length) return null;
+  const idx = Math.floor(Math.random() * members.length);
+  return members[idx].user_id;
 }
 
 export async function undianManual(winnerId: string): Promise<{ user_id: string }> {
