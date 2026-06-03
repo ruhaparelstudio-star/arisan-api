@@ -20,7 +20,10 @@ export const jwtAuth = createMiddleware<{ Variables: AuthVariables }>(async (c, 
       .eq('id', payload.userId)
       .single();
     if (user?.deleted_at) {
-      return c.json({ error: 'Akun kamu telah ditangguhkan. Hubungi admin untuk informasi lebih lanjut.' }, 403);
+      return c.json(
+        { error: 'Akun kamu telah ditangguhkan. Hubungi admin untuk informasi lebih lanjut.' },
+        403
+      );
     }
 
     c.set('userId', payload.userId);

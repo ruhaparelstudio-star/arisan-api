@@ -992,10 +992,7 @@ groupsRoute.delete('/:id/members/:memberId', async (c) => {
           .insert({ period_id: p.id, user_id: memberId, status: 'late' });
       } else if (existing.status === 'pending') {
         // Pending → tandai late
-        await supabase
-          .from('payments')
-          .update({ status: 'late' })
-          .eq('id', existing.id);
+        await supabase.from('payments').update({ status: 'late' }).eq('id', existing.id);
       }
       // confirmed/late tetap tidak diubah (audit trail)
     }

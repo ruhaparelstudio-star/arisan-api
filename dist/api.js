@@ -99413,7 +99413,10 @@ var jwtAuth = createMiddleware(async (c, next) => {
     const payload = (0, import_jsonwebtoken2.verify)(token, process.env.JWT_SECRET);
     const { data: user } = await supabase.from("users").select("deleted_at").eq("id", payload.userId).single();
     if (user?.deleted_at) {
-      return c.json({ error: "Akun kamu telah ditangguhkan. Hubungi admin untuk informasi lebih lanjut." }, 403);
+      return c.json(
+        { error: "Akun kamu telah ditangguhkan. Hubungi admin untuk informasi lebih lanjut." },
+        403
+      );
     }
     c.set("userId", payload.userId);
     c.set("phone", payload.phone);
@@ -100832,7 +100835,10 @@ async function createSwapRequest(requesterId, targetId, groupId) {
   }
   const { data: swap, error: error51 } = await supabase.from("swap_requests").insert({ group_id: groupId, requester_id: requesterId, target_id: targetId }).select().single();
   if (error51 || !swap) return { error: "Gagal membuat permintaan tukar giliran" };
-  await sendWA(targetId, `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`);
+  await sendWA(
+    targetId,
+    `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`
+  );
   insertNotification(
     targetId,
     "swap_request",

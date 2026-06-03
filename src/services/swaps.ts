@@ -83,7 +83,10 @@ export async function createSwapRequest(
 
   if (error || !swap) return { error: 'Gagal membuat permintaan tukar giliran' };
 
-  await sendWA(targetId, `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`);
+  await sendWA(
+    targetId,
+    `Ada permintaan tukar giliran arisan untukmu. Buka aplikasi untuk merespons.`
+  );
   insertNotification(
     targetId,
     'swap_request',
