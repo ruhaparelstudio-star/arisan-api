@@ -408,7 +408,10 @@ adminRoute.post('/cron/trigger/:type', async (c) => {
 
   const type = parsed.data;
   const cronSecret = process.env.CRON_SECRET ?? '';
-  const baseUrl = `http://localhost:${process.env.PORT ?? '3001'}`;
+  // PUBLIC_URL di-set manual di env production, VERCEL_URL otomatis dari Vercel
+  const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+  const baseUrl =
+    process.env.PUBLIC_URL ?? vercelUrl ?? `http://localhost:${process.env.PORT ?? '3001'}`;
 
   let endpoint: string;
   if (type === 'payment-reminder') {

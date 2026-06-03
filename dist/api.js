@@ -100773,7 +100773,7 @@ undianRoute.post("/:id/undian", zValidator("json", undianSchema), async (c) => {
     if (!winnerId)
       return c.json({ error: "Tidak ada anggota yang memenuhi syarat untuk undian" }, 400);
     const { data: winnerUser } = await supabase.from("users").select("name, phone").eq("id", winnerId).single();
-    winnerName = winnerUser?.name || winnerUser?.phone || "anggota";
+    winnerName = winnerUser?.name || "anggota grup";
   } else {
     const { data: manualUser } = await supabase.from("users").select("name").eq("id", body.winner_id).single();
     if (!manualUser) return c.json({ error: "User pemenang tidak ditemukan" }, 404);
@@ -101480,7 +101480,8 @@ adminRoute.post("/cron/trigger/:type", async (c) => {
   }
   const type = parsed.data;
   const cronSecret = process.env.CRON_SECRET ?? "";
-  const baseUrl2 = `http://localhost:${process.env.PORT ?? "3001"}`;
+  const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
+  const baseUrl2 = process.env.PUBLIC_URL ?? vercelUrl ?? `http://localhost:${process.env.PORT ?? "3001"}`;
   let endpoint;
   if (type === "payment-reminder") {
     endpoint = "/api/cron/payment-reminder";
