@@ -90353,6 +90353,16 @@ function zValidatorFunction(target, schema, hook, options) {
 }
 var zValidator = zValidatorFunction;
 
+// src/utils/zv.ts
+function zv(target, schema) {
+  return zValidator(target, schema, (result, c) => {
+    if (!result.success) {
+      const msg = result.error.issues[0]?.message ?? "Validasi gagal";
+      return c.json({ error: msg }, 400);
+    }
+  });
+}
+
 // src/routes/auth.ts
 var import_jsonwebtoken = require("jsonwebtoken");
 
@@ -99351,7 +99361,7 @@ var verifySchema = external_exports.object({
 var TEST_PHONE_PREFIX = "+628560000100";
 var TEST_OTP_CODE = "123456";
 var isTestPhone = (phone) => (process.env.NODE_ENV === "development" || process.env.ENABLE_TEST_BYPASS === "true") && phone.startsWith(TEST_PHONE_PREFIX);
-authRoute.post("/send-otp", zValidator("json", sendSchema), async (c) => {
+authRoute.post("/send-otp", zv("json", sendSchema), async (c) => {
   const { phone } = c.req.valid("json");
   if (isTestPhone(phone)) {
     await saveOTP(phone, TEST_OTP_CODE);
@@ -99371,7 +99381,7 @@ authRoute.post("/send-otp", zValidator("json", sendSchema), async (c) => {
   logger.info("OTP sent", { phone: maskPhone(phone) });
   return c.json({ message: "OTP berhasil dikirim ke WhatsApp kamu" });
 });
-authRoute.post("/verify-otp", zValidator("json", verifySchema), async (c) => {
+authRoute.post("/verify-otp", zv("json", verifySchema), async (c) => {
   const { phone, code } = c.req.valid("json");
   const verification = await verifyOTP(phone, code);
   if (!verification.valid) {
@@ -99435,16 +99445,12 @@ usersRoute.get("/me", async (c) => {
   if (!data) return c.json({ error: "User tidak ditemukan" }, 404);
   return c.json({ user: data });
 });
-usersRoute.put(
-  "/me",
-  zValidator("json", external_exports.object({ name: external_exports.string().min(2).max(100) })),
-  async (c) => {
-    const userId = c.get("userId");
-    const { name } = c.req.valid("json");
-    await supabase.from("users").update({ name }).eq("id", userId);
-    return c.json({ message: "Profil berhasil diperbarui" });
-  }
-);
+usersRoute.put("/me", zv("json", external_exports.object({ name: external_exports.string().min(2).max(100) })), async (c) => {
+  const userId = c.get("userId");
+  const { name } = c.req.valid("json");
+  await supabase.from("users").update({ name }).eq("id", userId);
+  return c.json({ message: "Profil berhasil diperbarui" });
+});
 usersRoute.delete("/me", async (c) => {
   const userId = c.get("userId");
   await supabase.from("users").update({
@@ -99469,16 +99475,12 @@ usersRoute.get("/me/stats", async (c) => {
   }, 0);
   return c.json({ group_count: groupCount, total_iuran: totalIuran, win_count: winCount });
 });
-usersRoute.put(
-  "/push-token",
-  zValidator("json", external_exports.object({ expo_push_token: external_exports.string() })),
-  async (c) => {
-    const userId = c.get("userId");
-    const { expo_push_token } = c.req.valid("json");
-    await supabase.from("push_tokens").upsert({ user_id: userId, expo_push_token, updated_at: /* @__PURE__ */ new Date() });
-    return c.json({ message: "Push token tersimpan" });
-  }
-);
+usersRoute.put("/push-token", zv("json", external_exports.object({ expo_push_token: external_exports.string() })), async (c) => {
+  const userId = c.get("userId");
+  const { expo_push_token } = c.req.valid("json");
+  await supabase.from("push_tokens").upsert({ user_id: userId, expo_push_token, updated_at: /* @__PURE__ */ new Date() });
+  return c.json({ message: "Push token tersimpan" });
+});
 
 // src/services/groups.ts
 async function generateInviteCode() {
@@ -99893,7 +99895,7 @@ var createSchema = external_exports.object({
   jumlah_periode: external_exports.number().int().min(2).max(100),
   mode_undian: external_exports.enum(["fixed", "random", "manual"])
 });
-groupsRoute.post("/", zValidator("json", createSchema), async (c) => {
+groupsRoute.post("/", zv("json", createSchema), async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
   const { data: userRecord } = await supabase.from("users").select("name").eq("id", userId).single();
@@ -99944,7 +99946,7 @@ groupsRoute.get("/code/:code", async (c) => {
 });
 groupsRoute.post(
   "/join",
-  zValidator("json", external_exports.object({ invite_code: external_exports.string().length(8).toUpperCase() })),
+  zv("json", external_exports.object({ invite_code: external_exports.string().length(8).toUpperCase() })),
   async (c) => {
     const userId = c.get("userId");
     const { invite_code } = c.req.valid("json");
@@ -99976,7 +99978,7 @@ groupsRoute.get("/:id", async (c) => {
   if (!membership) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
   const [{ data: group }, { data: rawMembers }, { data: activePeriod }, { data: swapCounts }] = await Promise.all([
     supabase.from("groups").select("*").eq("id", groupId).single(),
-    supabase.from("group_members").select("user_id, urutan, users(id, name, phone)").eq("group_id", groupId).order("urutan"),
+    supabase.from("group_members").select("user_id, urutan, users(id, name)").eq("group_id", groupId).order("urutan"),
     supabase.from("periods").select("id, periode_ke").eq("group_id", groupId).eq("status", "active").maybeSingle(),
     supabase.from("swap_requests").select("requester_id").eq("group_id", groupId).eq("status", "approved")
   ]);
@@ -99997,7 +99999,7 @@ groupsRoute.get("/:id", async (c) => {
 });
 groupsRoute.put(
   "/:id/urutan",
-  zValidator("json", external_exports.object({ urutan: external_exports.array(external_exports.string().uuid()) })),
+  zv("json", external_exports.object({ urutan: external_exports.array(external_exports.string().uuid()) })),
   async (c) => {
     const userId = c.get("userId");
     const groupId = c.req.param("id");
@@ -100082,10 +100084,10 @@ groupsRoute.get("/:id/hutang", async (c) => {
       (p) => (paymentMap[p.id] ?? "pending") !== "confirmed"
     );
     if (unpaidPeriods.length === 0) continue;
-    const { data: uData } = await supabase.from("users").select("name, phone").eq("id", winner.user_id).single();
+    const { data: uData } = await supabase.from("users").select("name").eq("id", winner.user_id).single();
     debtors.push({
       user_id: winner.user_id,
-      name: uData?.name ?? uData?.phone ?? "\u2014",
+      name: uData?.name ?? "(tanpa nama)",
       won_period: wonPeriode,
       total_hutang: unpaidPeriods.length * group.nominal,
       detail: unpaidPeriods.map((p) => ({
@@ -100108,7 +100110,7 @@ groupsRoute.get("/:id/hutang", async (c) => {
 });
 groupsRoute.post(
   "/:id/kabur/:memberId/resolve",
-  zValidator("json", external_exports.object({ mode: external_exports.enum(["kick_writeoff", "netting"]) })),
+  zv("json", external_exports.object({ mode: external_exports.enum(["kick_writeoff", "netting"]) })),
   async (c) => {
     const ketuaId = c.get("userId");
     const groupId = c.req.param("id");
@@ -100197,7 +100199,7 @@ groupsRoute.get("/:id/buku", async (c) => {
   if (!membership) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
   const [{ data: group }, { data: members }, { data: periods }] = await Promise.all([
     supabase.from("groups").select("id, name, nominal, jumlah_periode, ketua_id, status").eq("id", groupId).single(),
-    supabase.from("group_members").select("user_id, urutan, users!inner(name, phone)").eq("group_id", groupId).order("urutan", { nullsFirst: false }),
+    supabase.from("group_members").select("user_id, urutan, users!inner(name)").eq("group_id", groupId).order("urutan", { nullsFirst: false }),
     supabase.from("periods").select("id, periode_ke, status, jatuh_tempo, tanggal_pelaksanaan").eq("group_id", groupId).order("periode_ke")
   ]);
   if (!group || !periods?.length) {
@@ -100220,9 +100222,9 @@ groupsRoute.get("/:id/buku", async (c) => {
       ...(allWinners ?? []).map((w) => w.user_id)
     ])
   ];
-  const { data: allUsers } = await supabase.from("users").select("id, name, phone").in("id", allUserIds);
+  const { data: allUsers } = await supabase.from("users").select("id, name").in("id", allUserIds);
   const userMap = {};
-  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? u.phone ?? "\u2014";
+  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? "\u2014";
   const memberCount = members?.length ?? 0;
   const nominal = group.nominal ?? 0;
   const periodsData = periods.map((p) => {
@@ -100385,7 +100387,7 @@ groupsRoute.get("/:id/activity-log", async (c) => {
 });
 groupsRoute.put(
   "/:groupId/periods/:periodId/tanggal",
-  zValidator("json", external_exports.object({ tanggal_pelaksanaan: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  zv("json", external_exports.object({ tanggal_pelaksanaan: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
   async (c) => {
     const userId = c.get("userId");
     const groupId = c.req.param("groupId");
@@ -100494,14 +100496,14 @@ groupsRoute.delete("/:id", async (c) => {
 });
 groupsRoute.post(
   "/:groupId/messages",
-  zValidator("json", external_exports.object({ content: external_exports.string().min(1).max(500) })),
+  zv("json", external_exports.object({ content: external_exports.string().min(1).max(500) })),
   async (c) => {
     const userId = c.get("userId");
     const groupId = c.req.param("groupId");
     const { content } = c.req.valid("json");
     const { data: member } = await supabase.from("group_members").select("user_id").eq("group_id", groupId).eq("user_id", userId).single();
     if (!member) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
-    const { data: msg, error: error51 } = await supabase.from("messages").insert({ group_id: groupId, user_id: userId, content }).select("id, group_id, user_id, content, created_at, user:users!user_id(name, phone)").single();
+    const { data: msg, error: error51 } = await supabase.from("messages").insert({ group_id: groupId, user_id: userId, content }).select("id, group_id, user_id, content, created_at, user:users!user_id(name)").single();
     if (error51 || !msg) return c.json({ error: "Gagal mengirim pesan" }, 500);
     const senderName = msg.user?.name ?? "Anggota";
     void (async () => {
@@ -100544,14 +100546,14 @@ groupsRoute.get("/:groupId/typing", async (c) => {
     else if (exp <= now) groupTyping.delete(uid);
   }
   if (activeTypers.length === 0) return c.json({ typing: [] });
-  const { data: users } = await supabase.from("users").select("id, name, phone").in("id", activeTypers);
-  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? u.phone }));
+  const { data: users } = await supabase.from("users").select("id, name").in("id", activeTypers);
+  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? "(tanpa nama)" }));
   return c.json({ typing });
 });
 
 // src/services/payments.ts
 async function getPeriodPaymentStatus(periodId) {
-  const { data } = await supabase.from("payments").select("*, users!user_id(id, name, phone)").eq("period_id", periodId).order("status");
+  const { data } = await supabase.from("payments").select("*, users!user_id(id, name)").eq("period_id", periodId).order("status");
   return data ?? [];
 }
 async function confirmPayment(periodId, memberId, confirmedBy) {
@@ -100561,6 +100563,8 @@ async function confirmPayment(periodId, memberId, confirmedBy) {
   const { data: group } = await supabase.from("groups").select("ketua_id").eq("id", period.group_id).single();
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: "Hanya ketua yang bisa konfirmasi pembayaran" };
+  const { data: existing } = await supabase.from("payments").select("status").eq("period_id", periodId).eq("user_id", memberId).maybeSingle();
+  const isNew = !existing || existing.status !== "confirmed";
   await supabase.from("payments").upsert(
     {
       period_id: periodId,
@@ -100571,7 +100575,7 @@ async function confirmPayment(periodId, memberId, confirmedBy) {
     },
     { onConflict: "period_id,user_id" }
   );
-  return { success: true };
+  return { success: true, isNew };
 }
 async function cancelConfirmPayment(periodId, memberId, confirmedBy) {
   const { data: period } = await supabase.from("periods").select("group_id, status").eq("id", periodId).single();
@@ -100657,42 +100661,35 @@ paymentsRoute.get("/:groupId/:periodId", async (c) => {
   const data = await getPeriodPaymentStatus(periodId);
   return c.json({ payments: data });
 });
-paymentsRoute.post("/:groupId/:periodId/confirm", zValidator("json", confirmSchema), async (c) => {
+paymentsRoute.post("/:groupId/:periodId/confirm", zv("json", confirmSchema), async (c) => {
   const confirmedBy = c.get("userId");
   const { groupId, periodId } = c.req.param();
   const { member_id } = c.req.valid("json");
   const result = await confirmPayment(periodId, member_id, confirmedBy);
   if (!result.success) return c.json({ error: result.reason }, 400);
   await logActivity(groupId, confirmedBy, "payment_confirmed", "Pembayaran anggota dikonfirmasi");
-  const { data: period } = await supabase.from("periods").select("periode_ke").eq("id", periodId).single();
-  insertNotification(
-    member_id,
-    "payment_confirmed",
-    "Pembayaran Dikonfirmasi",
-    `Pembayaran kamu untuk periode ${period?.periode_ke ?? ""} telah dikonfirmasi ketua.`,
-    { group_id: groupId, period_id: periodId }
-  ).catch(() => {
-  });
+  if (result.isNew) {
+    const { data: period } = await supabase.from("periods").select("periode_ke").eq("id", periodId).single();
+    insertNotification(
+      member_id,
+      "payment_confirmed",
+      "Pembayaran Dikonfirmasi",
+      `Pembayaran kamu untuk periode ${period?.periode_ke ?? ""} telah dikonfirmasi ketua.`,
+      { group_id: groupId, period_id: periodId }
+    ).catch(() => {
+    });
+  }
   return c.json({ message: "Pembayaran berhasil dikonfirmasi" });
 });
-paymentsRoute.delete(
-  "/:groupId/:periodId/confirm",
-  zValidator("json", confirmSchema),
-  async (c) => {
-    const confirmedBy = c.get("userId");
-    const { groupId, periodId } = c.req.param();
-    const { member_id } = c.req.valid("json");
-    const result = await cancelConfirmPayment(periodId, member_id, confirmedBy);
-    if (!result.success) return c.json({ error: result.reason }, 400);
-    await logActivity(
-      groupId,
-      confirmedBy,
-      "payment_cancelled",
-      "Konfirmasi pembayaran dibatalkan"
-    );
-    return c.json({ message: "Konfirmasi pembayaran dibatalkan" });
-  }
-);
+paymentsRoute.delete("/:groupId/:periodId/confirm", zv("json", confirmSchema), async (c) => {
+  const confirmedBy = c.get("userId");
+  const { groupId, periodId } = c.req.param();
+  const { member_id } = c.req.valid("json");
+  const result = await cancelConfirmPayment(periodId, member_id, confirmedBy);
+  if (!result.success) return c.json({ error: result.reason }, 400);
+  await logActivity(groupId, confirmedBy, "payment_cancelled", "Konfirmasi pembayaran dibatalkan");
+  return c.json({ message: "Konfirmasi pembayaran dibatalkan" });
+});
 
 // src/services/undian.ts
 async function undianFixed(groupId, periodeKe) {
@@ -100747,7 +100744,7 @@ var undianSchema = external_exports.discriminatedUnion("mode", [
     winner_id: external_exports.string().uuid()
   })
 ]);
-undianRoute.post("/:id/undian", zValidator("json", undianSchema), async (c) => {
+undianRoute.post("/:id/undian", zv("json", undianSchema), async (c) => {
   const ketuaId = c.get("userId");
   const groupId = c.req.param("id");
   const body = c.req.valid("json");
@@ -100969,7 +100966,7 @@ async function approveSwap(swapId, ketuaId, decision) {
 // src/routes/swaps.ts
 var swapsRoute = new Hono2();
 swapsRoute.use("*", jwtAuth);
-var SWAP_SELECT = "*, requester:users!requester_id(name, phone), target:users!target_id(name, phone)";
+var SWAP_SELECT = "*, requester:users!requester_id(name), target:users!target_id(name)";
 swapsRoute.get("/my", async (c) => {
   const userId = c.get("userId");
   const { data } = await supabase.from("swap_requests").select(SWAP_SELECT).or(`requester_id.eq.${userId},target_id.eq.${userId}`).order("created_at", { ascending: false });
@@ -100987,7 +100984,7 @@ swapsRoute.get("/group/:groupId", async (c) => {
 });
 swapsRoute.post(
   "/ketua",
-  zValidator(
+  zv(
     "json",
     external_exports.object({
       member_a_id: external_exports.string().uuid(),
@@ -101011,7 +101008,7 @@ swapsRoute.post(
 );
 swapsRoute.post(
   "/",
-  zValidator(
+  zv(
     "json",
     external_exports.object({
       target_id: external_exports.string().uuid(),
@@ -101046,7 +101043,7 @@ swapsRoute.post(
 );
 swapsRoute.post(
   "/:id/respond",
-  zValidator("json", external_exports.object({ response: external_exports.enum(["accepted", "rejected"]) })),
+  zv("json", external_exports.object({ response: external_exports.enum(["accepted", "rejected"]) })),
   async (c) => {
     const targetId = c.get("userId");
     const swapId = c.req.param("id");
@@ -101058,7 +101055,7 @@ swapsRoute.post(
 );
 swapsRoute.post(
   "/:id/approve",
-  zValidator("json", external_exports.object({ decision: external_exports.enum(["approved", "ketua_rejected"]) })),
+  zv("json", external_exports.object({ decision: external_exports.enum(["approved", "ketua_rejected"]) })),
   async (c) => {
     const ketuaId = c.get("userId");
     const swapId = c.req.param("id");
@@ -101245,7 +101242,7 @@ adminRoute.get("/stats/overview", async (c) => {
 });
 adminRoute.get(
   "/users",
-  zValidator(
+  zv(
     "query",
     external_exports.object({
       page: external_exports.coerce.number().int().min(1).default(1),
@@ -101343,7 +101340,7 @@ adminRoute.delete("/users/:id", async (c) => {
 });
 adminRoute.get(
   "/groups",
-  zValidator(
+  zv(
     "query",
     external_exports.object({
       page: external_exports.coerce.number().int().min(1).default(1),
@@ -101537,6 +101534,10 @@ adminRoute.get("/crashlytics/status", async (c) => {
 
 // src/app.ts
 var app = new Hono2();
+app.onError((err, c) => {
+  logger.error("Unhandled error", { path: c.req.path, method: c.req.method, error: err.message });
+  return c.json({ error: "Terjadi kesalahan server. Coba lagi." }, 500);
+});
 app.route("/health", healthRoute);
 app.route("/api/auth", authRoute);
 app.route("/api/users", usersRoute);

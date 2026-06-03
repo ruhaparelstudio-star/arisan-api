@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { jwtAuth } from '../middleware/auth';
 import * as gs from '../services/groups';
 import {
@@ -25,7 +25,7 @@ const createSchema = z.object({
 });
 
 // POST /api/groups
-groupsRoute.post('/', zValidator('json', createSchema), async (c) => {
+groupsRoute.post('/', zv('json', createSchema), async (c) => {
   const userId = c.get('userId');
   const body = c.req.valid('json');
 
@@ -105,7 +105,7 @@ groupsRoute.get('/code/:code', async (c) => {
 // POST /api/groups/join — harus sebelum /:id agar tidak ditangkap sebagai param
 groupsRoute.post(
   '/join',
-  zValidator('json', z.object({ invite_code: z.string().length(8).toUpperCase() })),
+  zv('json', z.object({ invite_code: z.string().length(8).toUpperCase() })),
   async (c) => {
     const userId = c.get('userId');
     const { invite_code } = c.req.valid('json');
@@ -174,7 +174,7 @@ groupsRoute.get('/:id', async (c) => {
       supabase.from('groups').select('*').eq('id', groupId).single(),
       supabase
         .from('group_members')
-        .select('user_id, urutan, users(id, name, phone)')
+        .select('user_id, urutan, users(id, name)')
         .eq('group_id', groupId)
         .order('urutan'),
       supabase
@@ -212,7 +212,7 @@ groupsRoute.get('/:id', async (c) => {
 // PUT /api/groups/:id/urutan
 groupsRoute.put(
   '/:id/urutan',
-  zValidator('json', z.object({ urutan: z.array(z.string().uuid()) })),
+  zv('json', z.object({ urutan: z.array(z.string().uuid()) })),
   async (c) => {
     const userId = c.get('userId');
     const groupId = c.req.param('id');
@@ -373,13 +373,13 @@ groupsRoute.get('/:id/hutang', async (c) => {
 
     const { data: uData } = await supabase
       .from('users')
-      .select('name, phone')
+      .select('name')
       .eq('id', winner.user_id)
       .single();
 
     debtors.push({
       user_id: winner.user_id,
-      name: uData?.name ?? uData?.phone ?? '—',
+      name: uData?.name ?? '(tanpa nama)',
       won_period: wonPeriode,
       total_hutang: unpaidPeriods.length * group.nominal,
       detail: unpaidPeriods.map((p) => ({
@@ -408,7 +408,7 @@ groupsRoute.get('/:id/hutang', async (c) => {
 // mode: 'kick_writeoff' (kick + catat kerugian) | 'netting' (offset hutang dengan pembayaran sebelumnya)
 groupsRoute.post(
   '/:id/kabur/:memberId/resolve',
-  zValidator('json', z.object({ mode: z.enum(['kick_writeoff', 'netting']) })),
+  zv('json', z.object({ mode: z.enum(['kick_writeoff', 'netting']) })),
   async (c) => {
     const ketuaId = c.get('userId');
     const groupId = c.req.param('id');
@@ -580,7 +580,7 @@ groupsRoute.get('/:id/buku', async (c) => {
       .single(),
     supabase
       .from('group_members')
-      .select('user_id, urutan, users!inner(name, phone)')
+      .select('user_id, urutan, users!inner(name)')
       .eq('group_id', groupId)
       .order('urutan', { nullsFirst: false }),
     supabase
@@ -617,12 +617,9 @@ groupsRoute.get('/:id/buku', async (c) => {
       ...(allWinners ?? []).map((w) => w.user_id),
     ]),
   ];
-  const { data: allUsers } = await supabase
-    .from('users')
-    .select('id, name, phone')
-    .in('id', allUserIds);
+  const { data: allUsers } = await supabase.from('users').select('id, name').in('id', allUserIds);
   const userMap: Record<string, string> = {};
-  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? u.phone ?? '—';
+  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? '—';
 
   const memberCount = members?.length ?? 0;
   const nominal = group.nominal ?? 0;
@@ -864,7 +861,7 @@ groupsRoute.get('/:id/activity-log', async (c) => {
 // Ketua bisa kapan saja. Pemenang undian periode ini bisa isi jika tanggal belum diset.
 groupsRoute.put(
   '/:groupId/periods/:periodId/tanggal',
-  zValidator('json', z.object({ tanggal_pelaksanaan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
+  zv('json', z.object({ tanggal_pelaksanaan: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })),
   async (c) => {
     const userId = c.get('userId');
     const groupId = c.req.param('groupId');
@@ -1064,7 +1061,7 @@ groupsRoute.delete('/:id', async (c) => {
 // POST /api/groups/:groupId/messages
 groupsRoute.post(
   '/:groupId/messages',
-  zValidator('json', z.object({ content: z.string().min(1).max(500) })),
+  zv('json', z.object({ content: z.string().min(1).max(500) })),
   async (c) => {
     const userId = c.get('userId');
     const groupId = c.req.param('groupId');
@@ -1082,7 +1079,7 @@ groupsRoute.post(
     const { data: msg, error } = await supabase
       .from('messages')
       .insert({ group_id: groupId, user_id: userId, content })
-      .select('id, group_id, user_id, content, created_at, user:users!user_id(name, phone)')
+      .select('id, group_id, user_id, content, created_at, user:users!user_id(name)')
       .single();
 
     if (error || !msg) return c.json({ error: 'Gagal mengirim pesan' }, 500);
@@ -1161,10 +1158,7 @@ groupsRoute.get('/:groupId/typing', async (c) => {
   if (activeTypers.length === 0) return c.json({ typing: [] });
 
   // Ambil nama dari DB
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, name, phone')
-    .in('id', activeTypers);
-  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? u.phone }));
+  const { data: users } = await supabase.from('users').select('id, name').in('id', activeTypers);
+  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? '(tanpa nama)' }));
   return c.json({ typing });
 });

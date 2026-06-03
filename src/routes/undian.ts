@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
+import { zv } from '../utils/zv';
 import { jwtAuth } from '../middleware/auth';
 import { supabase } from '../db/supabase';
 import * as us from '../services/undian';
@@ -43,7 +43,7 @@ const undianSchema = z.discriminatedUnion('mode', [
 ]);
 
 // POST /api/groups/:id/undian
-undianRoute.post('/:id/undian', zValidator('json', undianSchema), async (c) => {
+undianRoute.post('/:id/undian', zv('json', undianSchema), async (c) => {
   const ketuaId = c.get('userId');
   const groupId = c.req.param('id');
   const body = c.req.valid('json');
