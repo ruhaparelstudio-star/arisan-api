@@ -12,8 +12,7 @@ type Variables = { userId: string };
 export const swapsRoute = new Hono<{ Variables: Variables }>();
 swapsRoute.use('*', jwtAuth);
 
-const SWAP_SELECT =
-  '*, requester:users!requester_id(name, phone), target:users!target_id(name, phone)';
+const SWAP_SELECT = '*, requester:users!requester_id(name), target:users!target_id(name)';
 
 // GET /api/swaps/my — harus sebelum /:id agar tidak tertangkap sebagai param
 swapsRoute.get('/my', async (c) => {

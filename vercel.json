@@ -11,5 +11,10 @@
       "src": "/(.*)",
       "dest": "/dist/api.js"
     }
-  ]
+  ],
+  "functions": {
+    "dist/api.js": {
+      "maxDuration": 30
+    }
+  }
 }

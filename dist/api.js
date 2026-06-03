@@ -99445,16 +99445,12 @@ usersRoute.get("/me", async (c) => {
   if (!data) return c.json({ error: "User tidak ditemukan" }, 404);
   return c.json({ user: data });
 });
-usersRoute.put(
-  "/me",
-  zv("json", external_exports.object({ name: external_exports.string().min(2).max(100) })),
-  async (c) => {
-    const userId = c.get("userId");
-    const { name } = c.req.valid("json");
-    await supabase.from("users").update({ name }).eq("id", userId);
-    return c.json({ message: "Profil berhasil diperbarui" });
-  }
-);
+usersRoute.put("/me", zv("json", external_exports.object({ name: external_exports.string().min(2).max(100) })), async (c) => {
+  const userId = c.get("userId");
+  const { name } = c.req.valid("json");
+  await supabase.from("users").update({ name }).eq("id", userId);
+  return c.json({ message: "Profil berhasil diperbarui" });
+});
 usersRoute.delete("/me", async (c) => {
   const userId = c.get("userId");
   await supabase.from("users").update({
@@ -99479,16 +99475,12 @@ usersRoute.get("/me/stats", async (c) => {
   }, 0);
   return c.json({ group_count: groupCount, total_iuran: totalIuran, win_count: winCount });
 });
-usersRoute.put(
-  "/push-token",
-  zv("json", external_exports.object({ expo_push_token: external_exports.string() })),
-  async (c) => {
-    const userId = c.get("userId");
-    const { expo_push_token } = c.req.valid("json");
-    await supabase.from("push_tokens").upsert({ user_id: userId, expo_push_token, updated_at: /* @__PURE__ */ new Date() });
-    return c.json({ message: "Push token tersimpan" });
-  }
-);
+usersRoute.put("/push-token", zv("json", external_exports.object({ expo_push_token: external_exports.string() })), async (c) => {
+  const userId = c.get("userId");
+  const { expo_push_token } = c.req.valid("json");
+  await supabase.from("push_tokens").upsert({ user_id: userId, expo_push_token, updated_at: /* @__PURE__ */ new Date() });
+  return c.json({ message: "Push token tersimpan" });
+});
 
 // src/services/groups.ts
 async function generateInviteCode() {
@@ -99986,7 +99978,7 @@ groupsRoute.get("/:id", async (c) => {
   if (!membership) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
   const [{ data: group }, { data: rawMembers }, { data: activePeriod }, { data: swapCounts }] = await Promise.all([
     supabase.from("groups").select("*").eq("id", groupId).single(),
-    supabase.from("group_members").select("user_id, urutan, users(id, name, phone)").eq("group_id", groupId).order("urutan"),
+    supabase.from("group_members").select("user_id, urutan, users(id, name)").eq("group_id", groupId).order("urutan"),
     supabase.from("periods").select("id, periode_ke").eq("group_id", groupId).eq("status", "active").maybeSingle(),
     supabase.from("swap_requests").select("requester_id").eq("group_id", groupId).eq("status", "approved")
   ]);
@@ -100092,10 +100084,10 @@ groupsRoute.get("/:id/hutang", async (c) => {
       (p) => (paymentMap[p.id] ?? "pending") !== "confirmed"
     );
     if (unpaidPeriods.length === 0) continue;
-    const { data: uData } = await supabase.from("users").select("name, phone").eq("id", winner.user_id).single();
+    const { data: uData } = await supabase.from("users").select("name").eq("id", winner.user_id).single();
     debtors.push({
       user_id: winner.user_id,
-      name: uData?.name ?? uData?.phone ?? "\u2014",
+      name: uData?.name ?? "(tanpa nama)",
       won_period: wonPeriode,
       total_hutang: unpaidPeriods.length * group.nominal,
       detail: unpaidPeriods.map((p) => ({
@@ -100207,7 +100199,7 @@ groupsRoute.get("/:id/buku", async (c) => {
   if (!membership) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
   const [{ data: group }, { data: members }, { data: periods }] = await Promise.all([
     supabase.from("groups").select("id, name, nominal, jumlah_periode, ketua_id, status").eq("id", groupId).single(),
-    supabase.from("group_members").select("user_id, urutan, users!inner(name, phone)").eq("group_id", groupId).order("urutan", { nullsFirst: false }),
+    supabase.from("group_members").select("user_id, urutan, users!inner(name)").eq("group_id", groupId).order("urutan", { nullsFirst: false }),
     supabase.from("periods").select("id, periode_ke, status, jatuh_tempo, tanggal_pelaksanaan").eq("group_id", groupId).order("periode_ke")
   ]);
   if (!group || !periods?.length) {
@@ -100230,9 +100222,9 @@ groupsRoute.get("/:id/buku", async (c) => {
       ...(allWinners ?? []).map((w) => w.user_id)
     ])
   ];
-  const { data: allUsers } = await supabase.from("users").select("id, name, phone").in("id", allUserIds);
+  const { data: allUsers } = await supabase.from("users").select("id, name").in("id", allUserIds);
   const userMap = {};
-  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? u.phone ?? "\u2014";
+  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? "\u2014";
   const memberCount = members?.length ?? 0;
   const nominal = group.nominal ?? 0;
   const periodsData = periods.map((p) => {
@@ -100511,7 +100503,7 @@ groupsRoute.post(
     const { content } = c.req.valid("json");
     const { data: member } = await supabase.from("group_members").select("user_id").eq("group_id", groupId).eq("user_id", userId).single();
     if (!member) return c.json({ error: "Kamu bukan anggota grup ini" }, 403);
-    const { data: msg, error: error51 } = await supabase.from("messages").insert({ group_id: groupId, user_id: userId, content }).select("id, group_id, user_id, content, created_at, user:users!user_id(name, phone)").single();
+    const { data: msg, error: error51 } = await supabase.from("messages").insert({ group_id: groupId, user_id: userId, content }).select("id, group_id, user_id, content, created_at, user:users!user_id(name)").single();
     if (error51 || !msg) return c.json({ error: "Gagal mengirim pesan" }, 500);
     const senderName = msg.user?.name ?? "Anggota";
     void (async () => {
@@ -100554,14 +100546,14 @@ groupsRoute.get("/:groupId/typing", async (c) => {
     else if (exp <= now) groupTyping.delete(uid);
   }
   if (activeTypers.length === 0) return c.json({ typing: [] });
-  const { data: users } = await supabase.from("users").select("id, name, phone").in("id", activeTypers);
-  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? u.phone }));
+  const { data: users } = await supabase.from("users").select("id, name").in("id", activeTypers);
+  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? "(tanpa nama)" }));
   return c.json({ typing });
 });
 
 // src/services/payments.ts
 async function getPeriodPaymentStatus(periodId) {
-  const { data } = await supabase.from("payments").select("*, users!user_id(id, name, phone)").eq("period_id", periodId).order("status");
+  const { data } = await supabase.from("payments").select("*, users!user_id(id, name)").eq("period_id", periodId).order("status");
   return data ?? [];
 }
 async function confirmPayment(periodId, memberId, confirmedBy) {
@@ -100689,24 +100681,15 @@ paymentsRoute.post("/:groupId/:periodId/confirm", zv("json", confirmSchema), asy
   }
   return c.json({ message: "Pembayaran berhasil dikonfirmasi" });
 });
-paymentsRoute.delete(
-  "/:groupId/:periodId/confirm",
-  zv("json", confirmSchema),
-  async (c) => {
-    const confirmedBy = c.get("userId");
-    const { groupId, periodId } = c.req.param();
-    const { member_id } = c.req.valid("json");
-    const result = await cancelConfirmPayment(periodId, member_id, confirmedBy);
-    if (!result.success) return c.json({ error: result.reason }, 400);
-    await logActivity(
-      groupId,
-      confirmedBy,
-      "payment_cancelled",
-      "Konfirmasi pembayaran dibatalkan"
-    );
-    return c.json({ message: "Konfirmasi pembayaran dibatalkan" });
-  }
-);
+paymentsRoute.delete("/:groupId/:periodId/confirm", zv("json", confirmSchema), async (c) => {
+  const confirmedBy = c.get("userId");
+  const { groupId, periodId } = c.req.param();
+  const { member_id } = c.req.valid("json");
+  const result = await cancelConfirmPayment(periodId, member_id, confirmedBy);
+  if (!result.success) return c.json({ error: result.reason }, 400);
+  await logActivity(groupId, confirmedBy, "payment_cancelled", "Konfirmasi pembayaran dibatalkan");
+  return c.json({ message: "Konfirmasi pembayaran dibatalkan" });
+});
 
 // src/services/undian.ts
 async function undianFixed(groupId, periodeKe) {
@@ -100983,7 +100966,7 @@ async function approveSwap(swapId, ketuaId, decision) {
 // src/routes/swaps.ts
 var swapsRoute = new Hono2();
 swapsRoute.use("*", jwtAuth);
-var SWAP_SELECT = "*, requester:users!requester_id(name, phone), target:users!target_id(name, phone)";
+var SWAP_SELECT = "*, requester:users!requester_id(name), target:users!target_id(name)";
 swapsRoute.get("/my", async (c) => {
   const userId = c.get("userId");
   const { data } = await supabase.from("swap_requests").select(SWAP_SELECT).or(`requester_id.eq.${userId},target_id.eq.${userId}`).order("created_at", { ascending: false });
@@ -101551,6 +101534,10 @@ adminRoute.get("/crashlytics/status", async (c) => {
 
 // src/app.ts
 var app = new Hono2();
+app.onError((err, c) => {
+  logger.error("Unhandled error", { path: c.req.path, method: c.req.method, error: err.message });
+  return c.json({ error: "Terjadi kesalahan server. Coba lagi." }, 500);
+});
 app.route("/health", healthRoute);
 app.route("/api/auth", authRoute);
 app.route("/api/users", usersRoute);

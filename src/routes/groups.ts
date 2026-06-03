@@ -174,7 +174,7 @@ groupsRoute.get('/:id', async (c) => {
       supabase.from('groups').select('*').eq('id', groupId).single(),
       supabase
         .from('group_members')
-        .select('user_id, urutan, users(id, name, phone)')
+        .select('user_id, urutan, users(id, name)')
         .eq('group_id', groupId)
         .order('urutan'),
       supabase
@@ -373,13 +373,13 @@ groupsRoute.get('/:id/hutang', async (c) => {
 
     const { data: uData } = await supabase
       .from('users')
-      .select('name, phone')
+      .select('name')
       .eq('id', winner.user_id)
       .single();
 
     debtors.push({
       user_id: winner.user_id,
-      name: uData?.name ?? uData?.phone ?? '—',
+      name: uData?.name ?? '(tanpa nama)',
       won_period: wonPeriode,
       total_hutang: unpaidPeriods.length * group.nominal,
       detail: unpaidPeriods.map((p) => ({
@@ -580,7 +580,7 @@ groupsRoute.get('/:id/buku', async (c) => {
       .single(),
     supabase
       .from('group_members')
-      .select('user_id, urutan, users!inner(name, phone)')
+      .select('user_id, urutan, users!inner(name)')
       .eq('group_id', groupId)
       .order('urutan', { nullsFirst: false }),
     supabase
@@ -617,12 +617,9 @@ groupsRoute.get('/:id/buku', async (c) => {
       ...(allWinners ?? []).map((w) => w.user_id),
     ]),
   ];
-  const { data: allUsers } = await supabase
-    .from('users')
-    .select('id, name, phone')
-    .in('id', allUserIds);
+  const { data: allUsers } = await supabase.from('users').select('id, name').in('id', allUserIds);
   const userMap: Record<string, string> = {};
-  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? u.phone ?? '—';
+  for (const u of allUsers ?? []) userMap[u.id] = u.name ?? '—';
 
   const memberCount = members?.length ?? 0;
   const nominal = group.nominal ?? 0;
@@ -1082,7 +1079,7 @@ groupsRoute.post(
     const { data: msg, error } = await supabase
       .from('messages')
       .insert({ group_id: groupId, user_id: userId, content })
-      .select('id, group_id, user_id, content, created_at, user:users!user_id(name, phone)')
+      .select('id, group_id, user_id, content, created_at, user:users!user_id(name)')
       .single();
 
     if (error || !msg) return c.json({ error: 'Gagal mengirim pesan' }, 500);
@@ -1161,10 +1158,7 @@ groupsRoute.get('/:groupId/typing', async (c) => {
   if (activeTypers.length === 0) return c.json({ typing: [] });
 
   // Ambil nama dari DB
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, name, phone')
-    .in('id', activeTypers);
-  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? u.phone }));
+  const { data: users } = await supabase.from('users').select('id, name').in('id', activeTypers);
+  const typing = (users ?? []).map((u) => ({ id: u.id, name: u.name ?? '(tanpa nama)' }));
   return c.json({ typing });
 });

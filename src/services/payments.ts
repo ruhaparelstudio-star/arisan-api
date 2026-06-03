@@ -4,7 +4,7 @@ import { insertNotification } from './notifications';
 export async function getPeriodPaymentStatus(periodId: string) {
   const { data } = await supabase
     .from('payments')
-    .select('*, users!user_id(id, name, phone)')
+    .select('*, users!user_id(id, name)')
     .eq('period_id', periodId)
     .order('status');
   return data ?? [];
