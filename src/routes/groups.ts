@@ -116,6 +116,8 @@ groupsRoute.post(
       .eq('invite_code', invite_code)
       .single();
     if (!group) return c.json({ error: 'Kode tidak valid atau sudah tidak aktif' }, 404);
+    if (group.invite_code_expires_at && new Date(group.invite_code_expires_at) < new Date())
+      return c.json({ error: 'Kode invite sudah kedaluwarsa. Minta kode baru dari ketua.' }, 400);
     if (group.status !== 'recruiting')
       return c.json({ error: 'Grup ini sudah tidak menerima anggota baru' }, 400);
 
@@ -200,14 +202,12 @@ groupsRoute.put(
 
     const { data: group } = await supabase
       .from('groups')
-      .select('ketua_id')
+      .select('ketua_id, status')
       .eq('id', groupId)
       .single();
     if (!group || group.ketua_id !== userId)
       return c.json({ error: 'Hanya ketua yang bisa mengatur giliran' }, 403);
-
-    if (!(await gs.isGroupEditable(groupId)))
-      return c.json({ error: 'Urutan tidak bisa diubah setelah arisan berjalan' }, 400);
+    if (group.status === 'disbanded') return c.json({ error: 'Grup sudah dibubarkan' }, 400);
 
     for (let i = 0; i < urutan.length; i++) {
       await supabase
@@ -670,6 +670,124 @@ groupsRoute.get('/:id/periods', async (c) => {
   return c.json({ periods: data ?? [] });
 });
 
+// POST /api/groups/:id/periods/:periodId/close — ketua tutup periode aktif & buka periode berikutnya
+groupsRoute.post('/:id/periods/:periodId/close', async (c) => {
+  const userId = c.get('userId');
+  const groupId = c.req.param('id');
+  const periodId = c.req.param('periodId');
+
+  const { data: group } = await supabase
+    .from('groups')
+    .select('ketua_id, name, jumlah_periode, status')
+    .eq('id', groupId)
+    .single();
+
+  if (!group) return c.json({ error: 'Grup tidak ditemukan' }, 404);
+  if (group.ketua_id !== userId)
+    return c.json({ error: 'Hanya ketua yang bisa menutup periode' }, 403);
+  if (group.status !== 'active') return c.json({ error: 'Grup tidak aktif' }, 400);
+
+  const { data: period } = await supabase
+    .from('periods')
+    .select('id, periode_ke, status')
+    .eq('id', periodId)
+    .eq('group_id', groupId)
+    .single();
+
+  if (!period) return c.json({ error: 'Periode tidak ditemukan' }, 404);
+  if (period.status !== 'active') return c.json({ error: 'Periode tidak sedang aktif' }, 400);
+
+  // Cek apakah undian sudah dilakukan untuk periode ini
+  const { data: winner } = await supabase
+    .from('winners')
+    .select('id')
+    .eq('period_id', periodId)
+    .eq('group_id', groupId)
+    .maybeSingle();
+
+  if (!winner)
+    return c.json(
+      {
+        error: 'Undian periode ini belum dilakukan. Lakukan undian dahulu sebelum menutup periode.',
+      },
+      400
+    );
+
+  // Cek status bayar — warn jika ada yang belum bayar tapi tetap bisa close
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId);
+
+  const { data: confirmedPayments } = await supabase
+    .from('payments')
+    .select('user_id')
+    .eq('period_id', periodId)
+    .eq('status', 'confirmed');
+
+  const memberCount = members?.length ?? 0;
+  const paidCount = confirmedPayments?.length ?? 0;
+  const unpaidCount = memberCount - paidCount;
+
+  // Tutup periode aktif
+  await supabase.from('periods').update({ status: 'closed' }).eq('id', periodId);
+
+  let nextPeriodCreated = false;
+  let groupCompleted = false;
+
+  if (period.periode_ke < group.jumlah_periode) {
+    // Buat periode berikutnya
+    await supabase.from('periods').insert({
+      group_id: groupId,
+      periode_ke: period.periode_ke + 1,
+      status: 'active',
+    });
+    nextPeriodCreated = true;
+  } else {
+    // Semua periode selesai — grup completed
+    await supabase.from('groups').update({ status: 'completed' }).eq('id', groupId);
+    groupCompleted = true;
+  }
+
+  await gs.logActivity(
+    groupId,
+    userId,
+    'period_closed',
+    groupCompleted
+      ? `Periode ${period.periode_ke} ditutup. Semua ${group.jumlah_periode} periode selesai — arisan "${group.name}" berakhir!`
+      : `Periode ${period.periode_ke} ditutup. Periode ${period.periode_ke + 1} dimulai.`
+  );
+
+  // Notifikasi ke semua anggota — fire-and-forget
+  void (async () => {
+    const { data: allMembers } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+    if (!allMembers) return;
+    for (const m of allMembers) {
+      await sendExpoPush(
+        m.user_id,
+        groupCompleted ? '🎉 Arisan Selesai!' : `📅 Periode ${period.periode_ke + 1} Dimulai`,
+        groupCompleted
+          ? `Arisan "${group.name}" telah selesai semua ${group.jumlah_periode} periode. Terima kasih!`
+          : `Periode ${period.periode_ke} telah ditutup. Selamat datang di periode ${period.periode_ke + 1}!`,
+        { group_id: groupId }
+      ).catch(() => {});
+    }
+  })();
+
+  return c.json({
+    message: groupCompleted
+      ? `Selamat! Arisan "${group.name}" telah menyelesaikan semua ${group.jumlah_periode} periode.`
+      : `Periode ${period.periode_ke} ditutup. Periode ${period.periode_ke + 1} telah dimulai.`,
+    closed_period: period.periode_ke,
+    next_period: nextPeriodCreated ? period.periode_ke + 1 : null,
+    group_completed: groupCompleted,
+    unpaid_count: unpaidCount,
+  });
+});
+
 // GET /api/groups/:id/activity-log — riwayat aktivitas grup
 groupsRoute.get('/:id/activity-log', async (c) => {
   const groupId = c.req.param('id');
@@ -691,6 +809,7 @@ groupsRoute.get('/:id/activity-log', async (c) => {
     undian: { icon: 'sparkles', tone: 'mint' },
     urutan_updated: { icon: 'swap', tone: 'blue' },
     group_disbanded: { icon: 'alert', tone: 'amber' },
+    period_closed: { icon: 'checkCircle', tone: 'blue' },
     invite_regenerated: { icon: 'share', tone: 'blue' },
     tanggal_updated: { icon: 'checkCircle', tone: 'blue' },
   };

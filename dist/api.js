@@ -99889,6 +99889,9 @@ var createSchema = external_exports.object({
 groupsRoute.post("/", zValidator("json", createSchema), async (c) => {
   const userId = c.get("userId");
   const body = c.req.valid("json");
+  const { data: userRecord } = await supabase.from("users").select("name").eq("id", userId).single();
+  if (!userRecord?.name)
+    return c.json({ error: "Lengkapi nama profil kamu sebelum membuat grup arisan" }, 400);
   const check2 = await canUserJoinOrCreate(userId);
   if (!check2.allowed) return c.json({ error: check2.reason }, 403);
   const inviteCode = await generateInviteCode();
@@ -99940,10 +99943,15 @@ groupsRoute.post(
     const { invite_code } = c.req.valid("json");
     const { data: group } = await supabase.from("groups").select("*").eq("invite_code", invite_code).single();
     if (!group) return c.json({ error: "Kode tidak valid atau sudah tidak aktif" }, 404);
+    if (group.invite_code_expires_at && new Date(group.invite_code_expires_at) < /* @__PURE__ */ new Date())
+      return c.json({ error: "Kode invite sudah kedaluwarsa. Minta kode baru dari ketua." }, 400);
     if (group.status !== "recruiting")
       return c.json({ error: "Grup ini sudah tidak menerima anggota baru" }, 400);
     const { data: existing } = await supabase.from("group_members").select("id").eq("group_id", group.id).eq("user_id", userId).single();
     if (existing) return c.json({ error: "Kamu sudah bergabung di grup ini" }, 400);
+    const { data: userRecord } = await supabase.from("users").select("name").eq("id", userId).single();
+    if (!userRecord?.name)
+      return c.json({ error: "Lengkapi nama profil kamu sebelum bergabung ke grup arisan" }, 400);
     const check2 = await canUserJoinOrCreate(userId);
     if (!check2.allowed) return c.json({ error: check2.reason }, 403);
     const { count } = await supabase.from("group_members").select("*", { count: "exact", head: true }).eq("group_id", group.id);
@@ -99976,11 +99984,11 @@ groupsRoute.put(
     const userId = c.get("userId");
     const groupId = c.req.param("id");
     const { urutan } = c.req.valid("json");
-    const { data: group } = await supabase.from("groups").select("ketua_id").eq("id", groupId).single();
+    const { data: group } = await supabase.from("groups").select("ketua_id, status").eq("id", groupId).single();
     if (!group || group.ketua_id !== userId)
       return c.json({ error: "Hanya ketua yang bisa mengatur giliran" }, 403);
-    if (!await isGroupEditable(groupId))
-      return c.json({ error: "Urutan tidak bisa diubah setelah arisan berjalan" }, 400);
+    if (group.status === "disbanded")
+      return c.json({ error: "Grup sudah dibubarkan" }, 400);
     for (let i = 0; i < urutan.length; i++) {
       await supabase.from("group_members").update({ urutan: i + 1 }).eq("group_id", groupId).eq("user_id", urutan[i]);
     }
@@ -100251,6 +100259,68 @@ groupsRoute.get("/:id/periods", async (c) => {
   const { data } = await supabase.from("periods").select("*").eq("group_id", groupId).order("periode_ke");
   return c.json({ periods: data ?? [] });
 });
+groupsRoute.post("/:id/periods/:periodId/close", async (c) => {
+  const userId = c.get("userId");
+  const groupId = c.req.param("id");
+  const periodId = c.req.param("periodId");
+  const { data: group } = await supabase.from("groups").select("ketua_id, name, jumlah_periode, status").eq("id", groupId).single();
+  if (!group) return c.json({ error: "Grup tidak ditemukan" }, 404);
+  if (group.ketua_id !== userId)
+    return c.json({ error: "Hanya ketua yang bisa menutup periode" }, 403);
+  if (group.status !== "active")
+    return c.json({ error: "Grup tidak aktif" }, 400);
+  const { data: period } = await supabase.from("periods").select("id, periode_ke, status").eq("id", periodId).eq("group_id", groupId).single();
+  if (!period) return c.json({ error: "Periode tidak ditemukan" }, 404);
+  if (period.status !== "active") return c.json({ error: "Periode tidak sedang aktif" }, 400);
+  const { data: winner } = await supabase.from("winners").select("id").eq("period_id", periodId).eq("group_id", groupId).maybeSingle();
+  if (!winner)
+    return c.json({ error: "Undian periode ini belum dilakukan. Lakukan undian dahulu sebelum menutup periode." }, 400);
+  const { data: members } = await supabase.from("group_members").select("user_id").eq("group_id", groupId);
+  const { data: confirmedPayments } = await supabase.from("payments").select("user_id").eq("period_id", periodId).eq("status", "confirmed");
+  const memberCount = members?.length ?? 0;
+  const paidCount = confirmedPayments?.length ?? 0;
+  const unpaidCount = memberCount - paidCount;
+  await supabase.from("periods").update({ status: "closed" }).eq("id", periodId);
+  let nextPeriodCreated = false;
+  let groupCompleted = false;
+  if (period.periode_ke < group.jumlah_periode) {
+    await supabase.from("periods").insert({
+      group_id: groupId,
+      periode_ke: period.periode_ke + 1,
+      status: "active"
+    });
+    nextPeriodCreated = true;
+  } else {
+    await supabase.from("groups").update({ status: "completed" }).eq("id", groupId);
+    groupCompleted = true;
+  }
+  await logActivity(
+    groupId,
+    userId,
+    "period_closed",
+    groupCompleted ? `Periode ${period.periode_ke} ditutup. Semua ${group.jumlah_periode} periode selesai \u2014 arisan "${group.name}" berakhir!` : `Periode ${period.periode_ke} ditutup. Periode ${period.periode_ke + 1} dimulai.`
+  );
+  void (async () => {
+    const { data: allMembers } = await supabase.from("group_members").select("user_id").eq("group_id", groupId);
+    if (!allMembers) return;
+    for (const m of allMembers) {
+      await sendExpoPush(
+        m.user_id,
+        groupCompleted ? "\u{1F389} Arisan Selesai!" : `\u{1F4C5} Periode ${period.periode_ke + 1} Dimulai`,
+        groupCompleted ? `Arisan "${group.name}" telah selesai semua ${group.jumlah_periode} periode. Terima kasih!` : `Periode ${period.periode_ke} telah ditutup. Selamat datang di periode ${period.periode_ke + 1}!`,
+        { group_id: groupId }
+      ).catch(() => {
+      });
+    }
+  })();
+  return c.json({
+    message: groupCompleted ? `Selamat! Arisan "${group.name}" telah menyelesaikan semua ${group.jumlah_periode} periode.` : `Periode ${period.periode_ke} ditutup. Periode ${period.periode_ke + 1} telah dimulai.`,
+    closed_period: period.periode_ke,
+    next_period: nextPeriodCreated ? period.periode_ke + 1 : null,
+    group_completed: groupCompleted,
+    unpaid_count: unpaidCount
+  });
+});
 groupsRoute.get("/:id/activity-log", async (c) => {
   const groupId = c.req.param("id");
   const limit = parseInt(c.req.query("limit") ?? "30");
@@ -100265,6 +100335,7 @@ groupsRoute.get("/:id/activity-log", async (c) => {
     undian: { icon: "sparkles", tone: "mint" },
     urutan_updated: { icon: "swap", tone: "blue" },
     group_disbanded: { icon: "alert", tone: "amber" },
+    period_closed: { icon: "checkCircle", tone: "blue" },
     invite_regenerated: { icon: "share", tone: "blue" },
     tanggal_updated: { icon: "checkCircle", tone: "blue" }
   };
