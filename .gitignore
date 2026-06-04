@@ -1,6 +1,5 @@
 node_modules
-dist/*
-!dist/api.js
+dist/
 .env
 *.local
 .DS_Store

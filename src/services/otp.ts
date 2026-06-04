@@ -8,6 +8,7 @@ const FONNTE_TIMEOUT = parseInt(process.env.FONNTE_TIMEOUT_MS ?? '3000');
 const OTP_TTL_MIN = 5;
 const RATE_MAX = 5;
 const RATE_WINDOW_HOURS = 1;
+const VERIFY_FAIL_MAX = 5;
 
 export function generateOTP(): string {
   return String(randomInt(100000, 999999));
@@ -51,26 +52,70 @@ export async function checkRateLimit(
 export async function saveOTP(phone: string, code: string): Promise<void> {
   const expiresAt = new Date(Date.now() + OTP_TTL_MIN * 60 * 1000).toISOString();
   await supabase.from('otp_codes').insert({ phone, code, expires_at: expiresAt });
+  // Reset fail counter saat OTP baru dikirim
+  await supabase.from('otp_rate_limit').delete().eq('phone', `verify:${phone}`);
 }
 
 export async function verifyOTP(
   phone: string,
   code: string
 ): Promise<{ valid: boolean; reason?: string }> {
-  const { data } = await supabase
+  const verifyKey = `verify:${phone}`;
+
+  // Ambil OTP terbaru yang belum dipakai dan belum expired untuk nomor ini
+  const { data: latest } = await supabase
     .from('otp_codes')
     .select('*')
     .eq('phone', phone)
-    .eq('code', code)
     .is('used_at', null)
     .gt('expires_at', new Date().toISOString())
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
 
-  if (!data) return { valid: false, reason: 'OTP tidak valid atau sudah expired' };
+  if (!latest) return { valid: false, reason: 'OTP tidak valid atau sudah expired' };
 
-  await supabase.from('otp_codes').update({ used_at: new Date().toISOString() }).eq('id', data.id);
+  // Cek fail count untuk percobaan verify nomor ini
+  const { data: failRecord } = await supabase
+    .from('otp_rate_limit')
+    .select('attempt_count')
+    .eq('phone', verifyKey)
+    .single();
+  const failCount = failRecord?.attempt_count ?? 0;
+
+  if (failCount >= VERIFY_FAIL_MAX) {
+    // Invalidasi OTP agar user harus kirim ulang
+    await supabase
+      .from('otp_codes')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', latest.id);
+    await supabase.from('otp_rate_limit').delete().eq('phone', verifyKey);
+    return { valid: false, reason: 'Terlalu banyak percobaan. Kirim ulang OTP dan coba lagi.' };
+  }
+
+  if (latest.code !== code) {
+    const newCount = failCount + 1;
+    await supabase
+      .from('otp_rate_limit')
+      .upsert(
+        { phone: verifyKey, attempt_count: newCount, window_start: new Date().toISOString() },
+        { onConflict: 'phone' }
+      );
+    const left = VERIFY_FAIL_MAX - newCount;
+    return {
+      valid: false,
+      reason:
+        left > 0
+          ? `OTP salah. ${left} percobaan tersisa sebelum kode di-reset.`
+          : 'Terlalu banyak percobaan. Kirim ulang OTP dan coba lagi.',
+    };
+  }
+
+  // Kode cocok — tandai used, hapus fail counter
+  await Promise.all([
+    supabase.from('otp_codes').update({ used_at: new Date().toISOString() }).eq('id', latest.id),
+    supabase.from('otp_rate_limit').delete().eq('phone', verifyKey),
+  ]);
   return { valid: true };
 }
 

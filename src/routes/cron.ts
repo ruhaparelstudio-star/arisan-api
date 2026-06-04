@@ -1,16 +1,35 @@
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
 import { sendWithDedup } from '../services/notifications';
 
-
 export const cronRoute = new Hono();
 
-const cronAuth = createMiddleware(async (c, next) => {
-  if (c.req.header('X-Cron-Secret') !== process.env.CRON_SECRET) {
-    return c.json({ error: 'Akses tidak diizinkan' }, 401);
+function verifyCronHmac(
+  secret: string | undefined,
+  signature: string | undefined,
+  timestamp: string | undefined
+): boolean {
+  if (!secret || !signature || !timestamp) return false;
+  const ts = parseInt(timestamp, 10);
+  if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) return false;
+  const expected = `sha256=${createHmac('sha256', secret).update(`${timestamp}:cron`).digest('hex')}`;
+  try {
+    return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false;
   }
+}
+
+const cronAuth = createMiddleware(async (c, next) => {
+  const ok = verifyCronHmac(
+    process.env.CRON_SECRET,
+    c.req.header('X-Cron-Signature'),
+    c.req.header('X-Cron-Timestamp')
+  );
+  if (!ok) return c.json({ error: 'Akses tidak diizinkan' }, 401);
   return next();
 });
 
@@ -141,8 +160,12 @@ cronRoute.get('/cleanup', async (c) => {
   ]);
 
   results.otp_deleted = otpRes.error ? `error: ${otpRes.error.message}` : (otpRes.data ?? 0);
-  results.notif_log_deleted = notifLogRes.error ? `error: ${notifLogRes.error.message}` : (notifLogRes.data ?? 0);
-  results.notifications_deleted = notificationsRes.error ? `error: ${notificationsRes.error.message}` : (notificationsRes.data ?? 0);
+  results.notif_log_deleted = notifLogRes.error
+    ? `error: ${notifLogRes.error.message}`
+    : (notifLogRes.data ?? 0);
+  results.notifications_deleted = notificationsRes.error
+    ? `error: ${notificationsRes.error.message}`
+    : (notificationsRes.data ?? 0);
 
   logger.info('Cron cleanup selesai', results);
   return c.json({ ok: true, ...results });

@@ -23,12 +23,14 @@ jobs:
       - name: Payment Reminder
         run: |
           curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/payment-reminder" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+            -H "X-Cron-Timestamp: ${{ steps.hmac.outputs.timestamp }}" \
+            -H "X-Cron-Signature: ${{ steps.hmac.outputs.signature }}"
 
       - name: Pelaksanaan Reminder
         run: |
           curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/pelaksanaan-reminder" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+            -H "X-Cron-Timestamp: ${{ steps.hmac.outputs.timestamp }}" \
+            -H "X-Cron-Signature: ${{ steps.hmac.outputs.signature }}"
 
       - name: Mark Late Payments
         run: |
@@ -39,4 +41,5 @@ jobs:
       - name: Cleanup Expired Data
         run: |
           curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/cleanup" \
-            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
+            -H "X-Cron-Timestamp: ${{ steps.hmac.outputs.timestamp }}" \
+            -H "X-Cron-Signature: ${{ steps.hmac.outputs.signature }}"
