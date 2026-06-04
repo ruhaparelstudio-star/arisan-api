@@ -35,7 +35,7 @@ usersRoute.delete('/me', async (c) => {
     .update({
       name: null,
       phone: `+62DELETED${userId.slice(0, 8)}`,
-      deleted_at: new Date(),
+      deleted_at: new Date().toISOString(),
     })
     .eq('id', userId);
   return c.json({ message: 'Akun berhasil dihapus' });
@@ -79,6 +79,6 @@ usersRoute.put('/push-token', zv('json', z.object({ expo_push_token: z.string() 
   const { expo_push_token } = c.req.valid('json');
   await supabase
     .from('push_tokens')
-    .upsert({ user_id: userId, expo_push_token, updated_at: new Date() });
+    .upsert({ user_id: userId, expo_push_token, updated_at: new Date().toISOString() });
   return c.json({ message: 'Push token tersimpan' });
 });

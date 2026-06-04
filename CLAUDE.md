@@ -261,4 +261,23 @@ BE-10 (2026-05-30) — GAP deferred dari MO-09:
 - Wire notifikasi: payments.ts (payment_confirmed → user dibayar), undian.ts (undian_done → semua member via async IIFE), swaps.ts (swap_approved/rejected → requester+target).
 - Supabase PromiseLike tidak punya .catch() — chain .then().catch() gagal TypeScript. Fix: pakai void (async () => {...})() pattern.
 - GAP-032: hapus import generateUserToken + endpoint /stream-token dari users.ts. streamio.ts TIDAK dihapus karena masih dipakai di groups.ts dan services/undian.ts.
+
+BE-REVIEW (2026-06-04) — System review + 18 gap fixes (all P0–P3):
+- GAP-01: swap urutan kini atomic via RPC `swap_group_member_urutan` (migration 010). Dua UPDATE terpisah tidak atomic — corrupt di concurrent request.
+- GAP-02: admin cron trigger mark-late kini generate HMAC (X-Cron-Timestamp + X-Cron-Signature). Admin secret pakai timingSafeEqual.
+- GAP-03: DB trigger `check_group_member_cap` (migration 010) enforce max member = jumlah_periode. Race condition join sebelumnya tidak terlindungi di DB level.
+- GAP-04: GET /api/groups/:id/periods kini wajib membership check — sebelumnya any auth user bisa query period any group.
+- GAP-05: confirmPayment validasi member ada di grup sebelum upsert payment.
+- GAP-06: markLatePayments Step 2 ganti insert → upsert + ignoreDuplicates — tidak crash jika concurrent.
+- GAP-08: dedup key payment-reminder ganti dari jatuh_tempo ke period_id — fix collision multi-grup same date.
+- GAP-09: activity-log limit/offset di-bound [1,100] — parseInt('abc') = NaN crash.
+- GAP-10: PATCH /notifications/:id/read return 404 jika tidak ditemukan/wrong owner.
+- GAP-11: push notif message-send batch via sendExpoPushBatch (satu Expo API call, chunked).
+- GAP-12: DELETE /api/groups/:id panggil archiveGroupChannel — Stream channel dihapus saat disband.
+- GAP-13: cleanup_old_notifications fn (migration 011). /api/cron/cleanup endpoint. GitHub Actions weekly cleanup job.
+- GAP-14: ENABLE_TEST_BYPASS dihapus — sandbox bypass hanya via NODE_ENV=development.
+- GAP-15: typing state in-memory didokumentasikan sebagai single-instance constraint.
+- GAP-16: Firebase IDs dipindah ke env vars (FIREBASE_PROJECT_ID, FIREBASE_APP_ID, FIREBASE_PACKAGE_NAME).
+- GAP-17: endpoint /hutang ganti N+1 → satu batch query untuk semua payments dan user names.
+- database.types.ts: tambah swap_group_member_urutan dan cleanup_old_notifications ke Functions.
 ```

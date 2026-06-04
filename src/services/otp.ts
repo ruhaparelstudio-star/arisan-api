@@ -21,35 +21,35 @@ export async function checkRateLimit(
   if (!data) {
     await supabase
       .from('otp_rate_limit')
-      .insert({ phone, attempt_count: 1, window_start: new Date() });
+      .insert({ phone, attempt_count: 1, window_start: new Date().toISOString() });
     return { allowed: true };
   }
 
-  const windowStart = new Date(data.window_start);
+  const windowStart = new Date(data.window_start ?? Date.now());
   const windowEnd = new Date(windowStart.getTime() + RATE_WINDOW_HOURS * 60 * 60 * 1000);
   const now = new Date();
 
   if (now > windowEnd) {
     await supabase
       .from('otp_rate_limit')
-      .update({ attempt_count: 1, window_start: now })
+      .update({ attempt_count: 1, window_start: now.toISOString() })
       .eq('phone', phone);
     return { allowed: true };
   }
 
-  if (data.attempt_count >= RATE_MAX) {
+  if ((data.attempt_count ?? 0) >= RATE_MAX) {
     return { allowed: false, retryAfterMs: windowEnd.getTime() - now.getTime() };
   }
 
   await supabase
     .from('otp_rate_limit')
-    .update({ attempt_count: data.attempt_count + 1 })
+    .update({ attempt_count: (data.attempt_count ?? 0) + 1 })
     .eq('phone', phone);
   return { allowed: true };
 }
 
 export async function saveOTP(phone: string, code: string): Promise<void> {
-  const expiresAt = new Date(Date.now() + OTP_TTL_MIN * 60 * 1000);
+  const expiresAt = new Date(Date.now() + OTP_TTL_MIN * 60 * 1000).toISOString();
   await supabase.from('otp_codes').insert({ phone, code, expires_at: expiresAt });
 }
 
@@ -70,7 +70,7 @@ export async function verifyOTP(
 
   if (!data) return { valid: false, reason: 'OTP tidak valid atau sudah expired' };
 
-  await supabase.from('otp_codes').update({ used_at: new Date() }).eq('id', data.id);
+  await supabase.from('otp_codes').update({ used_at: new Date().toISOString() }).eq('id', data.id);
   return { valid: true };
 }
 

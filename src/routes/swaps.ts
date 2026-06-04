@@ -6,6 +6,7 @@ import { supabase } from '../db/supabase';
 import * as ss from '../services/swaps';
 import * as gs from '../services/groups';
 import { insertNotification } from '../services/notifications';
+import { logger } from '../utils/logger';
 
 type Variables = { userId: string };
 
@@ -177,22 +178,22 @@ swapsRoute.post(
       if (!swap) return;
       const approved = decision === 'approved';
       await insertNotification(
-        swap.requester_id,
+        swap.requester_id!,
         'swap_approved',
         approved ? 'Tukar Giliran Disetujui' : 'Tukar Giliran Ditolak',
         approved
           ? 'Ketua menyetujui request tukar giliran kamu.'
           : 'Ketua menolak request tukar giliran kamu.',
         { group_id: swap.group_id, swap_id: swapId }
-      ).catch(() => {});
+      ).catch((err) => logger.error('insertNotification failed (swap ketua decision requester)', { swapId, err }));
       if (approved) {
         await insertNotification(
-          swap.target_id,
+          swap.target_id!,
           'swap_approved',
           'Tukar Giliran Disetujui',
           'Ketua menyetujui tukar giliran kamu dengan anggota lain.',
           { group_id: swap.group_id, swap_id: swapId }
-        ).catch(() => {});
+        ).catch((err) => logger.error('insertNotification failed (swap ketua decision target)', { swapId, err }));
       }
     })();
 

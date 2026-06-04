@@ -64,12 +64,14 @@ notificationsRoute.patch('/:id/read', async (c) => {
   const userId = c.get('userId');
   const id = c.req.param('id');
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('notifications')
     .update({ is_read: true })
     .eq('id', id)
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .select('id');
 
   if (error) return c.json({ error: 'Gagal menandai notifikasi' }, 500);
+  if (!data?.length) return c.json({ error: 'Notifikasi tidak ditemukan' }, 404);
   return c.json({ message: 'Notifikasi ditandai sudah dibaca' });
 });

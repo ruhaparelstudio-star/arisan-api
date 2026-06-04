@@ -6,6 +6,7 @@ import { supabase } from '../db/supabase';
 import * as us from '../services/undian';
 import { logActivity } from '../services/groups';
 import { insertNotification } from '../services/notifications';
+import { logger } from '../utils/logger';
 
 type Variables = { userId: string };
 
@@ -15,12 +16,22 @@ undianRoute.use('*', jwtAuth);
 
 // GET /api/groups/:id/winners — riwayat pemenang
 undianRoute.get('/:id/winners', async (c) => {
+  const userId = c.get('userId');
   const groupId = c.req.param('id');
+
+  // Hanya anggota grup yang bisa lihat riwayat pemenang
+  const { data: member } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .single();
+  if (!member) return c.json({ error: 'Kamu bukan anggota grup ini' }, 403);
 
   const [{ data }, { data: group }] = await Promise.all([
     supabase
       .from('winners')
-      .select('id, user_id, created_at, period_id, periods(periode_ke), users(name, phone)')
+      .select('id, user_id, created_at, period_id, periods(periode_ke), users(name)')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false }),
     supabase.from('groups').select('nominal, jumlah_periode').eq('id', groupId).single(),
@@ -126,7 +137,7 @@ undianRoute.post('/:id/undian', zv('json', undianSchema), async (c) => {
 
     const result = await us.undianManual(body.winner_id);
     winnerId = result.user_id;
-    winnerName = manualUser.name;
+    winnerName = manualUser.name ?? 'anggota';
   }
 
   // Simpan winner — INSERT ONLY
@@ -151,14 +162,14 @@ undianRoute.post('/:id/undian', zv('json', undianSchema), async (c) => {
     for (const m of members) {
       const isWinner = m.user_id === winnerId;
       await insertNotification(
-        m.user_id,
+        m.user_id!,
         'undian_done',
         isWinner ? 'Kamu Menang Undian!' : 'Undian Selesai',
         isWinner
           ? `Selamat! Kamu adalah pemenang undian periode ${period.periode_ke} di grup ${group.name}.`
           : `Undian periode ${period.periode_ke} di grup ${group.name} selesai. Pemenang: ${winnerName}.`,
         { group_id: groupId, period_id: body.period_id, winner_id: winnerId }
-      ).catch(() => {});
+      ).catch((err) => logger.error('insertNotification failed (undian result)', { groupId, err }));
     }
   })();
 

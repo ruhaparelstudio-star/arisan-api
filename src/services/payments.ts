@@ -1,5 +1,6 @@
 import { supabase } from '../db/supabase';
 import { insertNotification } from './notifications';
+import { logger } from '../utils/logger';
 
 export async function getPeriodPaymentStatus(periodId: string) {
   const { data } = await supabase
@@ -22,10 +23,18 @@ export async function confirmPayment(periodId: string, memberId: string, confirm
   const { data: group } = await supabase
     .from('groups')
     .select('ketua_id')
-    .eq('id', period.group_id)
+    .eq('id', period.group_id!)
     .single();
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: 'Hanya ketua yang bisa konfirmasi pembayaran' };
+
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', period.group_id!)
+    .eq('user_id', memberId)
+    .single();
+  if (!membership) return { success: false, reason: 'Anggota tidak ditemukan di grup ini' };
 
   const { data: existing } = await supabase
     .from('payments')
@@ -42,7 +51,7 @@ export async function confirmPayment(periodId: string, memberId: string, confirm
       user_id: memberId,
       status: 'confirmed',
       confirmed_by: confirmedBy,
-      confirmed_at: new Date(),
+      confirmed_at: new Date().toISOString(),
     },
     { onConflict: 'period_id,user_id' }
   );
@@ -66,7 +75,7 @@ export async function cancelConfirmPayment(
   const { data: group } = await supabase
     .from('groups')
     .select('ketua_id')
-    .eq('id', period.group_id)
+    .eq('id', period.group_id!)
     .single();
   if (!group || group.ketua_id !== confirmedBy)
     return { success: false, reason: 'Hanya ketua yang bisa membatalkan konfirmasi' };
@@ -99,7 +108,7 @@ export async function notifyKetuasOfLatePayments(): Promise<void> {
     const group = period.groups as unknown as { name: string; ketua_id: string };
 
     const [{ data: allMembers }, { data: confirmed }] = await Promise.all([
-      supabase.from('group_members').select('user_id').eq('group_id', period.group_id),
+      supabase.from('group_members').select('user_id').eq('group_id', period.group_id!),
       supabase
         .from('payments')
         .select('user_id')
@@ -117,7 +126,7 @@ export async function notifyKetuasOfLatePayments(): Promise<void> {
         '⚠ Ada Anggota Belum Bayar',
         `${unpaidCount} anggota belum bayar di grup "${group.name}". Jatuh tempo sudah terlewat. Ketuk untuk tindak lanjuti.`,
         { group_id: period.group_id, period_id: period.id }
-      ).catch(() => {});
+      ).catch((err) => logger.error('insertNotification failed (payment late)', { periodId: period.id, err }));
     }
   }
 }
@@ -149,7 +158,7 @@ export async function markLatePayments(): Promise<number> {
 
   for (const period of overduePeriods ?? []) {
     const [{ data: members }, { data: paidMembers }] = await Promise.all([
-      supabase.from('group_members').select('user_id').eq('group_id', period.group_id),
+      supabase.from('group_members').select('user_id').eq('group_id', period.group_id!),
       supabase.from('payments').select('user_id').eq('period_id', period.id),
     ]);
 
@@ -159,7 +168,10 @@ export async function markLatePayments(): Promise<number> {
     if (unpaid.length) {
       await supabase
         .from('payments')
-        .insert(unpaid.map((m) => ({ period_id: period.id, user_id: m.user_id, status: 'late' })));
+        .upsert(
+          unpaid.map((m) => ({ period_id: period.id, user_id: m.user_id, status: 'late' })),
+          { onConflict: 'period_id,user_id', ignoreDuplicates: true }
+        );
       updated += unpaid.length;
     }
   }

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { zv } from '../utils/zv';
-import { sign } from 'jsonwebtoken';
+import { sign, verify } from 'jsonwebtoken';
 import { supabase } from '../db/supabase';
 import * as otpService from '../services/otp';
 import { logger } from '../utils/logger';
@@ -18,12 +18,11 @@ const verifySchema = z.object({
   code: z.string().length(6, 'Kode OTP harus 6 digit'),
 });
 
-// Nomor test sandbox — aktif saat NODE_ENV=development ATAU ENABLE_TEST_BYPASS=true
+// Nomor test sandbox — hanya aktif saat NODE_ENV=development
 const TEST_PHONE_PREFIX = '+628560000100';
 const TEST_OTP_CODE = '123456';
 const isTestPhone = (phone: string) =>
-  (process.env.NODE_ENV === 'development' || process.env.ENABLE_TEST_BYPASS === 'true') &&
-  phone.startsWith(TEST_PHONE_PREFIX);
+  process.env.NODE_ENV === 'development' && phone.startsWith(TEST_PHONE_PREFIX);
 
 authRoute.post('/send-otp', zv('json', sendSchema), async (c) => {
   const { phone } = c.req.valid('json');
@@ -90,5 +89,36 @@ authRoute.post('/verify-otp', zv('json', verifySchema), async (c) => {
   });
 
   logger.info('User logged in', { userId: user.id });
+  return c.json({ token, user: { id: user.id, phone: user.phone, name: user.name } });
+});
+
+// POST /api/auth/refresh — perbarui token yang hampir expired tanpa OTP ulang
+// Butuh token valid di header Authorization
+authRoute.post('/refresh', async (c) => {
+  const header = c.req.header('Authorization');
+  if (!header?.startsWith('Bearer '))
+    return c.json({ error: 'Token tidak ditemukan. Silakan login kembali.' }, 401);
+
+  let payload: { userId: string; phone: string };
+  try {
+    payload = verify(header.slice(7), process.env.JWT_SECRET!) as { userId: string; phone: string };
+  } catch {
+    return c.json({ error: 'Token tidak valid atau sudah expired. Silakan login kembali.' }, 401);
+  }
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('id, phone, name, deleted_at')
+    .eq('id', payload.userId)
+    .single();
+
+  if (!user || user.deleted_at)
+    return c.json({ error: 'Akun tidak ditemukan atau ditangguhkan.' }, 403);
+
+  const token = sign({ userId: user.id, phone: user.phone }, process.env.JWT_SECRET!, {
+    expiresIn: '30d',
+  });
+
+  logger.info('Token refreshed', { userId: user.id });
   return c.json({ token, user: { id: user.id, phone: user.phone, name: user.name } });
 });

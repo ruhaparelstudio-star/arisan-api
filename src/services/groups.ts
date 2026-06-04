@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
 
@@ -6,9 +7,7 @@ export async function generateInviteCode(): Promise<string> {
   let code: string;
   let exists = true;
   do {
-    code = Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join(
-      ''
-    );
+    code = Array.from({ length: 8 }, () => chars[randomInt(0, chars.length)]).join('');
     const { data } = await supabase.from('groups').select('id').eq('invite_code', code).single();
     exists = !!data;
   } while (exists);

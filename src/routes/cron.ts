@@ -4,6 +4,7 @@ import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
 import { sendWithDedup } from '../services/notifications';
 
+
 export const cronRoute = new Hono();
 
 const cronAuth = createMiddleware(async (c, next) => {
@@ -54,15 +55,15 @@ cronRoute.get('/payment-reminder', async (c) => {
 
   let sent = 0;
   for (const payment of payments ?? []) {
-    const period = periodMap.get(payment.period_id);
+    const period = periodMap.get(payment.period_id!);
     if (!period) continue;
 
     const isToday = period.jatuh_tempo === todayStr;
     const dueLabel = isToday ? 'hari ini' : '3 hari lagi';
 
     await sendWithDedup(
-      payment.user_id,
-      `payment-reminder-${period.jatuh_tempo}`,
+      payment.user_id!,
+      `payment-reminder-${payment.period_id}`,
       {
         title: 'Pengingat Pembayaran Arisan',
         body: `Jatuh tempo pembayaran periode ke-${period.periode_ke} adalah ${dueLabel}.`,
@@ -100,7 +101,7 @@ cronRoute.get('/pelaksanaan-reminder', async (c) => {
     const { data: members, error: memberError } = await supabase
       .from('group_members')
       .select('user_id')
-      .eq('group_id', period.group_id);
+      .eq('group_id', period.group_id!);
 
     if (memberError) {
       logger.error('Cron pelaksanaan-reminder: query members gagal', {
@@ -112,7 +113,7 @@ cronRoute.get('/pelaksanaan-reminder', async (c) => {
 
     for (const member of members ?? []) {
       await sendWithDedup(
-        member.user_id,
+        member.user_id!,
         `pelaksanaan-reminder-${period.id}`,
         {
           title: 'Pengingat Pelaksanaan Arisan',
@@ -126,4 +127,23 @@ cronRoute.get('/pelaksanaan-reminder', async (c) => {
 
   logger.info('Cron pelaksanaan-reminder selesai', { sent });
   return c.json({ ok: true, sent });
+});
+
+// GET /api/cron/cleanup
+// Hapus data kadaluarsa: OTP lama, notif_log lama, notifications lama
+cronRoute.get('/cleanup', async (c) => {
+  const results: Record<string, number | string> = {};
+
+  const [otpRes, notifLogRes, notificationsRes] = await Promise.all([
+    supabase.rpc('cleanup_expired_otp'),
+    supabase.rpc('cleanup_old_notif_log'),
+    supabase.rpc('cleanup_old_notifications'),
+  ]);
+
+  results.otp_deleted = otpRes.error ? `error: ${otpRes.error.message}` : (otpRes.data ?? 0);
+  results.notif_log_deleted = notifLogRes.error ? `error: ${notifLogRes.error.message}` : (notifLogRes.data ?? 0);
+  results.notifications_deleted = notificationsRes.error ? `error: ${notificationsRes.error.message}` : (notificationsRes.data ?? 0);
+
+  logger.info('Cron cleanup selesai', results);
+  return c.json({ ok: true, ...results });
 });

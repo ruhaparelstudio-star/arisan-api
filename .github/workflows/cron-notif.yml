@@ -2,14 +2,24 @@ name: Cron — Notifikasi Reminder
 
 on:
   schedule:
-    # 08:00 WIB = 01:00 UTC
+    # 08:00 WIB = 01:00 UTC (daily reminders + mark-late)
     - cron: '0 1 * * *'
+    # Cleanup mingguan — Minggu 02:00 UTC
+    - cron: '0 2 * * 0'
   workflow_dispatch: # manual trigger untuk testing
 
 jobs:
   send-reminders:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate HMAC signature
+        id: hmac
+        run: |
+          TS=$(date +%s)
+          SIG="sha256=$(echo -n "${TS}:cron" | openssl dgst -sha256 -hmac "${{ secrets.CRON_SECRET }}" | awk '{print $2}')"
+          echo "timestamp=$TS" >> $GITHUB_OUTPUT
+          echo "signature=$SIG" >> $GITHUB_OUTPUT
+
       - name: Payment Reminder
         run: |
           curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/payment-reminder" \
@@ -23,4 +33,10 @@ jobs:
       - name: Mark Late Payments
         run: |
           curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/payments/cron/mark-late" \
+            -H "X-Cron-Timestamp: ${{ steps.hmac.outputs.timestamp }}" \
+            -H "X-Cron-Signature: ${{ steps.hmac.outputs.signature }}"
+
+      - name: Cleanup Expired Data
+        run: |
+          curl -sf -X GET "${{ secrets.API_BASE_URL }}/api/cron/cleanup" \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"

@@ -1,3 +1,4 @@
+import { randomInt } from 'crypto';
 import { supabase } from '../db/supabase';
 import { logger } from '../utils/logger';
 import { sendSystemMessage } from './streamio';
@@ -17,7 +18,7 @@ export async function undianFixed(
   if (!data) return null;
   const users = data.users as unknown as { name: string } | { name: string }[] | null;
   const name = Array.isArray(users) ? (users[0]?.name ?? '') : (users?.name ?? '');
-  return { user_id: data.user_id, name };
+  return { user_id: data.user_id!, name };
 }
 
 export async function undianRandom(groupId: string): Promise<string | null> {
@@ -41,13 +42,13 @@ export async function undianRandom(groupId: string): Promise<string | null> {
   if (data) return data as string;
 
   // Fallback: semua anggota sudah pernah menang (multi-putaran arisan).
-  // Pilih acak dari semua anggota aktif.
+  // Pilih acak dari semua anggota aktif — pakai randomInt (kriptografis).
   const { data: members } = await supabase
     .from('group_members')
     .select('user_id')
     .eq('group_id', groupId);
   if (!members?.length) return null;
-  const idx = Math.floor(Math.random() * members.length);
+  const idx = randomInt(0, members.length);
   return members[idx].user_id;
 }
 
@@ -56,11 +57,18 @@ export async function undianManual(winnerId: string): Promise<{ user_id: string 
 }
 
 export async function saveWinner(groupId: string, periodId: string, userId: string): Promise<void> {
-  // INSERT ONLY — tidak ada update/delete
   const { error } = await supabase
     .from('winners')
     .insert({ group_id: groupId, period_id: periodId, user_id: userId });
-  if (error) logger.error('saveWinner failed', { groupId, periodId, userId, error });
+
+  if (error) {
+    // code 23505 = unique_violation — constraint (period_id, group_id) menolak duplikat
+    if (error.code === '23505') {
+      logger.warn('saveWinner: duplicate blocked by DB constraint (idempotent)', { groupId, periodId });
+      return;
+    }
+    logger.error('saveWinner failed', { groupId, periodId, userId, error });
+  }
 }
 
 /**
@@ -116,12 +124,12 @@ export async function autoConfirmNetting(
   for (const w of eligiblePrevWinners) {
     const periodeKe = (w.periods as unknown as { periode_ke: number }).periode_ke;
     await insertNotification(
-      w.user_id,
+      w.user_id!,
       'payment_auto_lunas',
       '✓ Tagihan Otomatis Lunas',
       `Tagihan kamu di periode ${currentPeriodeKe} grup "${groupName}" otomatis lunas. Kamu pernah menang di periode ${periodeKe}, sehingga hutang saling netting dengan pemenang baru.`,
       { group_id: groupId, period_id: periodId }
-    ).catch(() => {});
+    ).catch((err) => logger.error('insertNotification failed (netting)', { groupId, err }));
   }
 
   logger.info('autoConfirmNetting', {

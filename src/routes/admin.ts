@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { createMiddleware } from 'hono/factory';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { z } from 'zod';
 import { zv } from '../utils/zv';
 import { StreamChat } from 'stream-chat';
@@ -10,7 +11,13 @@ import { maskPhone } from '../utils/mask';
 export const adminRoute = new Hono();
 
 const adminAuth = createMiddleware(async (c, next) => {
-  if (c.req.header('X-Admin-Secret') !== process.env.ADMIN_SECRET_KEY) {
+  const provided = c.req.header('X-Admin-Secret') ?? '';
+  const expected = process.env.ADMIN_SECRET_KEY ?? '';
+  if (!expected) return c.json({ error: 'Unauthorized' }, 401);
+  try {
+    if (!timingSafeEqual(Buffer.from(provided), Buffer.from(expected)))
+      return c.json({ error: 'Unauthorized' }, 401);
+  } catch {
     return c.json({ error: 'Unauthorized' }, 401);
   }
   await next();
@@ -281,10 +288,10 @@ adminRoute.get('/groups/:id', async (c) => {
 
     const summaryMap = new Map<string, { confirmed: number; pending: number }>();
     for (const p of payments ?? []) {
-      const entry = summaryMap.get(p.period_id) ?? { confirmed: 0, pending: 0 };
+      const entry = summaryMap.get(p.period_id!) ?? { confirmed: 0, pending: 0 };
       if (p.status === 'confirmed') entry.confirmed++;
       else entry.pending++;
-      summaryMap.set(p.period_id, entry);
+      summaryMap.set(p.period_id!, entry);
     }
     paymentSummary = Array.from(summaryMap.entries()).map(([period_id, counts]) => ({
       period_id,
@@ -328,7 +335,7 @@ adminRoute.get('/otp-stats', async (c) => {
 
   const dailyMap = new Map<string, number>();
   for (const row of otpLogs ?? []) {
-    const day = row.created_at.split('T')[0];
+    const day = (row.created_at ?? '').split('T')[0];
     dailyMap.set(day, (dailyMap.get(day) ?? 0) + 1);
   }
 
@@ -343,7 +350,7 @@ adminRoute.get('/otp-stats', async (c) => {
 
   const rate_limited_numbers = (rateLimited ?? []).map((r) => ({
     phone: maskPhone(r.phone),
-    attempt_count: r.attempt_count,
+    attempt_count: r.attempt_count ?? 0,
     window_start: r.window_start,
   }));
 
@@ -356,7 +363,7 @@ adminRoute.get('/system-health', async (c) => {
   let streamStatus: 'ok' | 'error' = 'error';
 
   try {
-    const { error } = await supabase.rpc('health_check_select1').single();
+    const { error } = await (supabase.rpc as (fn: string) => ReturnType<typeof supabase.rpc>)('health_check_select1').single();
     if (error) throw error;
     supabaseStatus = 'ok';
   } catch {
@@ -391,7 +398,7 @@ adminRoute.get('/system-health', async (c) => {
 });
 
 // POST /admin/cron/trigger/:type
-const triggerTypeSchema = z.enum(['payment-reminder', 'pelaksanaan-reminder', 'mark-late']);
+const triggerTypeSchema = z.enum(['payment-reminder', 'pelaksanaan-reminder', 'mark-late', 'cleanup']);
 
 adminRoute.post('/cron/trigger/:type', async (c) => {
   const typeParam = c.req.param('type');
@@ -400,7 +407,7 @@ adminRoute.post('/cron/trigger/:type', async (c) => {
   if (!parsed.success) {
     return c.json(
       {
-        error: 'Tipe cron tidak valid. Gunakan: payment-reminder, pelaksanaan-reminder, mark-late',
+        error: 'Tipe cron tidak valid. Gunakan: payment-reminder, pelaksanaan-reminder, mark-late, cleanup',
       },
       400
     );
@@ -408,24 +415,40 @@ adminRoute.post('/cron/trigger/:type', async (c) => {
 
   const type = parsed.data;
   const cronSecret = process.env.CRON_SECRET ?? '';
-  // PUBLIC_URL di-set manual di env production, VERCEL_URL otomatis dari Vercel
   const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
   const baseUrl =
     process.env.PUBLIC_URL ?? vercelUrl ?? `http://localhost:${process.env.PORT ?? '3001'}`;
 
   let endpoint: string;
+  let usesHmac: boolean;
   if (type === 'payment-reminder') {
     endpoint = '/api/cron/payment-reminder';
+    usesHmac = false;
   } else if (type === 'pelaksanaan-reminder') {
     endpoint = '/api/cron/pelaksanaan-reminder';
+    usesHmac = false;
+  } else if (type === 'cleanup') {
+    endpoint = '/api/cron/cleanup';
+    usesHmac = false;
   } else {
     endpoint = '/api/payments/cron/mark-late';
+    usesHmac = true;
+  }
+
+  // mark-late uses HMAC (X-Cron-Signature + X-Cron-Timestamp)
+  // payment-reminder and pelaksanaan-reminder use plain X-Cron-Secret
+  const headers: Record<string, string> = {};
+  if (usesHmac) {
+    const ts = Math.floor(Date.now() / 1000).toString();
+    const sig = `sha256=${createHmac('sha256', cronSecret).update(`${ts}:cron`).digest('hex')}`;
+    headers['X-Cron-Timestamp'] = ts;
+    headers['X-Cron-Signature'] = sig;
+  } else {
+    headers['X-Cron-Secret'] = cronSecret;
   }
 
   try {
-    const res = await fetch(`${baseUrl}${endpoint}`, {
-      headers: { 'X-Cron-Secret': cronSecret },
-    });
+    const res = await fetch(`${baseUrl}${endpoint}`, { headers });
     const body = await res.json();
     logger.info('Admin cron trigger', { type, status: res.status });
     return c.json({ ok: true, type, result: body });
@@ -442,28 +465,25 @@ adminRoute.get('/crashlytics/status', async (c) => {
     supabase.from('push_tokens').select('*', { count: 'exact', head: true }),
   ]);
 
+  const projectId = process.env.FIREBASE_PROJECT_ID ?? 'arisan-app-5ecef';
+  const appId = process.env.FIREBASE_APP_ID ?? '';
+  const packageName = process.env.FIREBASE_PACKAGE_NAME ?? 'com.ruhaparelstudio.arisan';
+
   return c.json({
     integration: {
-      project_id: 'arisan-app-5ecef',
-      project_number: '376511029938',
-      app_id: '1:376511029938:android:e55860053a01bead41dfab',
-      package_name: 'com.ruhaparelstudio.arisan',
-      sdk_version: '24.0.0',
+      project_id: projectId,
+      app_id: appId,
+      package_name: packageName,
       collection_enabled: true,
-      debug_enabled: true,
-      sha_registered: true,
-      configured_at: '2026-06-01',
     },
     stats: {
       registered_devices: activeDevices ?? 0,
       total_users: totalUsers ?? 0,
     },
     links: {
-      console: 'https://console.firebase.google.com/project/arisan-app-5ecef/crashlytics',
-      issues:
-        'https://console.firebase.google.com/project/arisan-app-5ecef/crashlytics/app/android:com.ruhaparelstudio.arisan/issues',
-      project_settings:
-        'https://console.firebase.google.com/project/arisan-app-5ecef/settings/general',
+      console: `https://console.firebase.google.com/project/${projectId}/crashlytics`,
+      issues: `https://console.firebase.google.com/project/${projectId}/crashlytics/app/android:${packageName}/issues`,
+      project_settings: `https://console.firebase.google.com/project/${projectId}/settings/general`,
     },
   });
 });

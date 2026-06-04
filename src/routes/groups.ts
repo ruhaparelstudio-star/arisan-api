@@ -7,9 +7,11 @@ import {
   createGroupChannel,
   addMemberToChannel,
   removeMemberFromChannel,
+  archiveGroupChannel,
 } from '../services/streamio';
-import { sendExpoPush, insertNotification } from '../services/notifications';
+import { sendExpoPush, sendExpoPushBatch, insertNotification } from '../services/notifications';
 import { supabase } from '../db/supabase';
+import { logger } from '../utils/logger';
 
 type Variables = { userId: string; phone: string };
 
@@ -41,7 +43,7 @@ groupsRoute.post('/', zv('json', createSchema), async (c) => {
   if (!check.allowed) return c.json({ error: check.reason }, 403);
 
   const inviteCode = await gs.generateInviteCode();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: group, error } = await supabase
     .from('groups')
@@ -144,9 +146,18 @@ groupsRoute.post(
       .from('group_members')
       .select('*', { count: 'exact', head: true })
       .eq('group_id', group.id);
-    await supabase
+    const { error: insertError } = await supabase
       .from('group_members')
       .insert({ group_id: group.id, user_id: userId, urutan: (count ?? 0) + 1 });
+
+    if (insertError) {
+      // P0001 = trigger exception (max 3 grup atau duplicate)
+      if (insertError.code === 'P0001' || insertError.code === '23505') {
+        return c.json({ error: insertError.message.includes('3 grup') ? insertError.message : 'Kamu sudah bergabung di grup ini.' }, 403);
+      }
+      logger.error('join group insert failed', { userId, groupId: group.id, error: insertError });
+      return c.json({ error: 'Gagal bergabung ke grup. Coba lagi.' }, 500);
+    }
 
     if ((count ?? 0) + 1 >= group.jumlah_periode) await gs.invalidateInviteCode(group.id);
 
@@ -193,12 +204,12 @@ groupsRoute.get('/:id', async (c) => {
   // Hitung jumlah_tukar (approved swaps) per user
   const swapCountMap: Record<string, number> = {};
   for (const s of swapCounts ?? []) {
-    swapCountMap[s.requester_id] = (swapCountMap[s.requester_id] ?? 0) + 1;
+    swapCountMap[s.requester_id ?? ''] = (swapCountMap[s.requester_id ?? ''] ?? 0) + 1;
   }
 
   const members = (rawMembers ?? []).map((m) => ({
     ...m,
-    jumlah_tukar: swapCountMap[m.user_id] ?? 0,
+    jumlah_tukar: swapCountMap[m.user_id ?? ''] ?? 0,
   }));
 
   return c.json({
@@ -227,13 +238,12 @@ groupsRoute.put(
       return c.json({ error: 'Hanya ketua yang bisa mengatur giliran' }, 403);
     if (group.status === 'disbanded') return c.json({ error: 'Grup sudah dibubarkan' }, 400);
 
-    for (let i = 0; i < urutan.length; i++) {
-      await supabase
-        .from('group_members')
-        .update({ urutan: i + 1 })
-        .eq('group_id', groupId)
-        .eq('user_id', urutan[i]);
-    }
+    await supabase
+      .from('group_members')
+      .upsert(
+        urutan.map((uid, i) => ({ group_id: groupId, user_id: uid, urutan: i + 1 })),
+        { onConflict: 'group_id,user_id' }
+      );
     await gs.logActivity(groupId, userId, 'urutan_updated', 'Urutan giliran diperbarui');
     return c.json({ message: 'Urutan giliran berhasil diperbarui' });
   }
@@ -297,7 +307,7 @@ groupsRoute.post('/:id/invite', async (c) => {
   if (group.ketua_id !== userId)
     return c.json({ error: 'Hanya ketua yang bisa generate kode' }, 403);
   const newCode = await gs.generateInviteCode();
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   await supabase
     .from('groups')
     .update({ invite_code: newCode, invite_code_expires_at: expiresAt })
@@ -337,7 +347,32 @@ groupsRoute.get('/:id/hutang', async (c) => {
   if (!activePeriod) return c.json({ debtors: [], impact_per_winner: 0 });
 
   // Periode yang sudah/sedang berjalan (closed + active)
-  const runningPeriods = (periods ?? []).filter((p) => ['active', 'closed'].includes(p.status));
+  const runningPeriods = (periods ?? []).filter((p) => ['active', 'closed'].includes(p.status ?? ''));
+  const runningPeriodIds = runningPeriods.map((p) => p.id);
+
+  // Batch: ambil semua payments untuk semua periode berjalan sekaligus
+  const { data: allPaymentsForRunning } = runningPeriodIds.length
+    ? await supabase
+        .from('payments')
+        .select('user_id, period_id, status')
+        .in('user_id', (winners ?? []).map((w) => w.user_id!))
+        .in('period_id', runningPeriodIds)
+    : { data: [] };
+
+  // Batch: ambil semua nama user sekaligus
+  const winnerIds = [...new Set((winners ?? []).map((w) => w.user_id!))];
+  const { data: winnerUsers } = winnerIds.length
+    ? await supabase.from('users').select('id, name').in('id', winnerIds)
+    : { data: [] };
+  const userNameMap: Record<string, string> = {};
+  for (const u of winnerUsers ?? []) userNameMap[u.id] = u.name ?? '(tanpa nama)';
+
+  // Bangun map: user_id → period_id → status (dari batch query)
+  const paymentMapByUser: Record<string, Record<string, string>> = {};
+  for (const py of allPaymentsForRunning ?? []) {
+    if (!paymentMapByUser[py.user_id!]) paymentMapByUser[py.user_id!] = {};
+    paymentMapByUser[py.user_id!][py.period_id!] = py.status ?? 'pending';
+  }
 
   const debtors: Array<{
     user_id: string;
@@ -349,37 +384,19 @@ groupsRoute.get('/:id/hutang', async (c) => {
 
   for (const winner of winners ?? []) {
     const wonPeriode = (winner.periods as unknown as { periode_ke: number }).periode_ke;
-    // Periode SETELAH menang yang harus dibayar
     const periodsAfterWin = runningPeriods.filter((p) => p.periode_ke > wonPeriode);
     if (!periodsAfterWin.length) continue;
 
-    const { data: payments } = await supabase
-      .from('payments')
-      .select('period_id, status')
-      .eq('user_id', winner.user_id)
-      .in(
-        'period_id',
-        periodsAfterWin.map((p) => p.id)
-      );
-
-    const paymentMap: Record<string, string> = {};
-    for (const py of payments ?? []) paymentMap[py.period_id] = py.status;
-
+    const paymentMap = paymentMapByUser[winner.user_id!] ?? {};
     const unpaidPeriods = periodsAfterWin.filter(
       (p) => (paymentMap[p.id] ?? 'pending') !== 'confirmed'
     );
 
     if (unpaidPeriods.length === 0) continue;
 
-    const { data: uData } = await supabase
-      .from('users')
-      .select('name')
-      .eq('id', winner.user_id)
-      .single();
-
     debtors.push({
-      user_id: winner.user_id,
-      name: uData?.name ?? '(tanpa nama)',
+      user_id: winner.user_id!,
+      name: userNameMap[winner.user_id!] ?? '(tanpa nama)',
       won_period: wonPeriode,
       total_hutang: unpaidPeriods.length * group.nominal,
       detail: unpaidPeriods.map((p) => ({
@@ -389,7 +406,6 @@ groupsRoute.get('/:id/hutang', async (c) => {
     });
   }
 
-  // Dampak ke pemenang berikutnya: setiap kabur member = pemenang terima lebih sedikit
   const kaburCount = debtors.filter((d) => d.total_hutang > 0).length;
   const memberCount = members?.length ?? 0;
   const expectedPerWinner = memberCount * group.nominal;
@@ -541,14 +557,14 @@ groupsRoute.post(
       .eq('group_id', groupId);
     for (const m of allMembers ?? []) {
       insertNotification(
-        m.user_id,
+        m.user_id!,
         'kabur_resolved',
         mode === 'kick_writeoff' ? '⚠ Anggota Kabur Ditangani' : '✓ Hutang Diselesaikan',
         mode === 'kick_writeoff'
           ? `Ketua telah mengeluarkan anggota yang kabur dari grup "${group.name}". Kerugian: Rp ${totalWrittenOff.toLocaleString('id')}.`
           : `Hutang anggota di grup "${group.name}" diselesaikan via netting. Pemenang berikutnya menerima lebih sedikit.`,
         { group_id: groupId }
-      ).catch(() => {});
+      ).catch((err) => logger.error('insertNotification failed (kabur resolve)', { groupId, err }));
     }
 
     return c.json({
@@ -612,9 +628,9 @@ groupsRoute.get('/:id/buku', async (c) => {
   // Ambil nama semua user_id yang terlibat (member + confirmer)
   const allUserIds = [
     ...new Set([
-      ...(members ?? []).map((m) => m.user_id),
+      ...(members ?? []).map((m) => m.user_id).filter(Boolean) as string[],
       ...(allPayments ?? []).filter((p) => p.confirmed_by).map((p) => p.confirmed_by as string),
-      ...(allWinners ?? []).map((w) => w.user_id),
+      ...(allWinners ?? []).map((w) => w.user_id).filter(Boolean) as string[],
     ]),
   ];
   const { data: allUsers } = await supabase.from('users').select('id, name').in('id', allUserIds);
@@ -638,7 +654,7 @@ groupsRoute.get('/:id/buku', async (c) => {
       winner: winner
         ? {
             user_id: winner.user_id,
-            name: userMap[winner.user_id] ?? '—',
+            name: userMap[winner.user_id ?? ''] ?? '—',
             drawn_at: winner.created_at,
             amount_received: nominal * memberCount,
           }
@@ -647,7 +663,7 @@ groupsRoute.get('/:id/buku', async (c) => {
         const py = payments.find((x) => x.user_id === m.user_id);
         return {
           user_id: m.user_id,
-          user_name: userMap[m.user_id] ?? '—',
+          user_name: userMap[m.user_id ?? ''] ?? '—',
           slot_order: m.urutan ?? null,
           status: py?.status ?? 'pending',
           confirmed_by_name: py?.confirmed_by ? (userMap[py.confirmed_by] ?? '—') : null,
@@ -674,7 +690,7 @@ groupsRoute.get('/:id/buku', async (c) => {
     },
     members: (members ?? []).map((m) => ({
       user_id: m.user_id,
-      name: userMap[m.user_id] ?? '—',
+      name: userMap[m.user_id ?? ''] ?? '—',
       slot_order: m.urutan ?? null,
     })),
     periods: periodsData,
@@ -688,7 +704,17 @@ groupsRoute.get('/:id/buku', async (c) => {
 
 // GET /api/groups/:id/periods — list semua periode grup
 groupsRoute.get('/:id/periods', async (c) => {
+  const userId = c.get('userId');
   const groupId = c.req.param('id');
+
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('user_id')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .single();
+  if (!membership) return c.json({ error: 'Kamu bukan anggota grup ini' }, 403);
+
   const { data } = await supabase
     .from('periods')
     .select('*')
@@ -794,13 +820,13 @@ groupsRoute.post('/:id/periods/:periodId/close', async (c) => {
     if (!allMembers) return;
     for (const m of allMembers) {
       await sendExpoPush(
-        m.user_id,
+        m.user_id!,
         groupCompleted ? '🎉 Arisan Selesai!' : `📅 Periode ${period.periode_ke + 1} Dimulai`,
         groupCompleted
           ? `Arisan "${group.name}" telah selesai semua ${group.jumlah_periode} periode. Terima kasih!`
           : `Periode ${period.periode_ke} telah ditutup. Selamat datang di periode ${period.periode_ke + 1}!`,
         { type: 'period_closed', group_id: groupId }
-      ).catch(() => {});
+      ).catch((err) => logger.error('sendExpoPush failed (period close)', { groupId, err }));
     }
   })();
 
@@ -817,9 +843,19 @@ groupsRoute.post('/:id/periods/:periodId/close', async (c) => {
 
 // GET /api/groups/:id/activity-log — riwayat aktivitas grup
 groupsRoute.get('/:id/activity-log', async (c) => {
+  const userId = c.get('userId');
   const groupId = c.req.param('id');
-  const limit = parseInt(c.req.query('limit') ?? '30');
-  const offset = parseInt(c.req.query('offset') ?? '0');
+
+  const { data: member } = await supabase
+    .from('group_members')
+    .select('id')
+    .eq('group_id', groupId)
+    .eq('user_id', userId)
+    .single();
+  if (!member) return c.json({ error: 'Kamu bukan anggota grup ini' }, 403);
+
+  const limit = Math.min(Math.max(parseInt(c.req.query('limit') ?? '30') || 30, 1), 100);
+  const offset = Math.max(parseInt(c.req.query('offset') ?? '0') || 0, 0);
   const { data, count } = await supabase
     .from('activity_log')
     .select('*, actor:users!actor_id(name)', { count: 'exact' })
@@ -911,8 +947,13 @@ groupsRoute.put(
       return c.json({ error: 'Tanggal sudah diatur. Hubungi ketua jika perlu mengubahnya.' }, 400);
     }
 
-    // jatuh_tempo = tanggal_pelaksanaan - 3 hari
+    // Validasi tanggal tidak di masa lalu
     const tanggal = new Date(tanggal_pelaksanaan);
+    const today = new Date(new Date().toISOString().split('T')[0]);
+    if (tanggal < today)
+      return c.json({ error: 'Tanggal pelaksanaan tidak boleh di masa lalu' }, 400);
+
+    // jatuh_tempo = tanggal_pelaksanaan - 3 hari
     const jatuhTempo = new Date(tanggal.getTime() - 3 * 24 * 60 * 60 * 1000);
     const jatuh_tempo = jatuhTempo.toISOString().split('T')[0];
 
@@ -1010,7 +1051,7 @@ groupsRoute.delete('/:id/members/:memberId', async (c) => {
     'Kamu Dikeluarkan dari Grup',
     `Kamu telah dikeluarkan dari grup arisan "${group.name}" oleh ketua.`,
     { type: 'member_kicked', group_id: groupId }
-  ).catch(() => {});
+  ).catch((err) => logger.error('sendExpoPush failed (member kicked)', { groupId, err }));
 
   return c.json({
     message: 'Anggota berhasil dikeluarkan dari grup',
@@ -1055,6 +1096,9 @@ groupsRoute.delete('/:id', async (c) => {
 
   await supabase.from('groups').update({ status: 'disbanded' }).eq('id', groupId);
   await gs.logActivity(groupId, userId, 'group_disbanded', `Grup dibubarkan oleh ketua`);
+  archiveGroupChannel(groupId).catch((err) =>
+    logger.error('archiveGroupChannel failed (disband)', { groupId, err })
+  );
   return c.json({ message: `Grup "${group.name}" berhasil dibubarkan` });
 });
 
@@ -1084,7 +1128,7 @@ groupsRoute.post(
 
     if (error || !msg) return c.json({ error: 'Gagal mengirim pesan' }, 500);
 
-    // Push notif ke semua anggota lain — fire-and-forget, tidak block response
+    // Push notif ke semua anggota lain — batch, fire-and-forget
     const senderName =
       (msg as unknown as { user?: { name?: string | null } }).user?.name ?? 'Anggota';
     void (async () => {
@@ -1096,14 +1140,14 @@ groupsRoute.post(
           .neq('user_id', userId),
         supabase.from('groups').select('name').eq('id', groupId).single(),
       ]);
-      if (!otherMembers) return;
+      if (!otherMembers?.length) return;
       const groupName = groupRow?.name ?? 'Grup';
-      for (const m of otherMembers) {
-        await sendExpoPush(m.user_id, `💬 ${groupName}`, `${senderName}: ${content.slice(0, 80)}`, {
-          screen: 'Chat',
-          groupId,
-        });
-      }
+      await sendExpoPushBatch(
+        otherMembers.map((m) => m.user_id!),
+        `💬 ${groupName}`,
+        `${senderName}: ${content.slice(0, 80)}`,
+        { screen: 'Chat', groupId }
+      );
     })();
 
     return c.json({ message: msg }, 201);
@@ -1111,7 +1155,11 @@ groupsRoute.post(
 );
 
 // In-memory typing state: groupId → { userId → expiresAt }
-// TTL 5 detik — cukup untuk debounce typing event mobile
+// TTL 5 detik — cukup untuk debounce typing event mobile.
+// CATATAN: state ini per-process. Deployment multi-instance (horizontal scale)
+// akan memiliki state yang terpisah antar instance — typing dari instance A
+// tidak terlihat di instance B. Untuk multi-instance, ganti dengan
+// Supabase Realtime presence channel atau Redis pub/sub.
 const typingState = new Map<string, Map<string, number>>();
 
 // POST /api/groups/:groupId/typing — broadcast "saya sedang mengetik"

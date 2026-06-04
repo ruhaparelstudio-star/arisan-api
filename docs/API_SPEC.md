@@ -1,9 +1,9 @@
 # arisan-api — API Specification
 
-**Version:** 1.0.0  
+**Version:** 1.1.0  
 **Base URL Production:** `https://arisan-api.vercel.app`  
 **Base URL Local:** `http://localhost:3001`  
-**Updated:** 2026-06-03
+**Updated:** 2026-06-04
 
 ---
 
@@ -240,7 +240,10 @@ Preview grup via invite code sebelum join. **Tidak perlu join terlebih dahulu.**
   "frekuensi": "monthly",
   "jumlah_periode": 6,
   "mode_undian": "random",
+  "invite_code": "AASG9RVF",
   "status": "recruiting",
+  "ketua_id": "a62745a2-...",
+  "created_at": "2026-06-03T09:21:53.163185+00:00",
   "member_count": 3
 }
 ```
@@ -305,12 +308,13 @@ Detail grup. **Hanya untuk anggota.**
 ### POST `/api/groups/:id/start`
 Ketua memulai arisan. Grup berubah dari `recruiting` → `active`, periode 1 dibuat.
 
+**Kondisi tambahan:**
+- Minimal 2 anggota sebelum bisa dimulai
+- Mode `fixed`: semua anggota wajib sudah punya urutan
+
 **Response 200:**
 ```json
-{
-  "message": "Arisan berhasil dimulai",
-  "period": { "id": "...", "periode_ke": 1, "status": "active" }
-}
+{ "message": "Arisan berhasil dimulai" }
 ```
 
 ---
@@ -320,10 +324,7 @@ Ketua regenerate invite code baru (8 karakter, berlaku 7 hari).
 
 **Response 200:**
 ```json
-{
-  "invite_code": "NEWCODE1",
-  "expires_at": "2026-06-10T..."
-}
+{ "invite_code": "NEWCODE1" }
 ```
 
 ---
@@ -338,7 +339,7 @@ Ketua atur ulang urutan anggota. **Hanya sebelum arisan dimulai.**
 
 **Response 200:**
 ```json
-{ "message": "Urutan berhasil diperbarui" }
+{ "message": "Urutan giliran berhasil diperbarui" }
 ```
 
 ---
@@ -384,40 +385,72 @@ Ketua menutup periode aktif dan membuka periode berikutnya. **Undian wajib dilak
 ### PUT `/api/groups/:groupId/periods/:periodId/tanggal`
 Set tanggal pelaksanaan. Bisa dilakukan ketua **atau** pemenang undian periode tersebut.
 
+> Pemenang hanya bisa isi tanggal jika belum ada. Ketua bisa override kapan saja.
+
 **Request:**
 ```json
 { "tanggal_pelaksanaan": "2026-07-15" }
 ```
+> Format: `YYYY-MM-DD`. Tidak boleh tanggal di masa lalu.
 
 **Response 200:**
 ```json
-{ "message": "Tanggal pelaksanaan berhasil diperbarui", "jatuh_tempo": "2026-07-12" }
+{ "tanggal_pelaksanaan": "2026-07-15", "jatuh_tempo": "2026-07-12" }
 ```
 > `jatuh_tempo` dihitung otomatis = `tanggal_pelaksanaan - 3 hari`
 
 ---
 
 ### GET `/api/groups/:id/buku`
-Buku kas grup — semua payment per periode per anggota. **Hanya ketua.**
+Buku kas grup — semua payment per periode per anggota. **Semua anggota** (bukan hanya ketua).
 
 **Response 200:**
 ```json
 {
-  "group_name": "Arisan Kantor",
-  "nominal": 200000,
-  "member_count": 6,
+  "group": {
+    "id": "...",
+    "name": "Arisan Kantor",
+    "nominal": 200000,
+    "total_periods": 6,
+    "status": "active",
+    "is_ketua": true
+  },
+  "members": [
+    { "user_id": "...", "name": "Ars Dev", "slot_order": 1 }
+  ],
   "periods": [
     {
-      "periode_ke": 1,
+      "period_id": "...",
+      "period_number": 1,
       "status": "closed",
-      "winner_name": "Ars Dev",
-      "arisan_amount": 1200000,
+      "due_date": "2026-06-28",
+      "execution_date": "2026-07-01",
+      "winner": {
+        "user_id": "...",
+        "name": "Ars Dev",
+        "drawn_at": "...",
+        "amount_received": 1200000
+      },
       "payments": [
-        { "name": "Ars Dev", "status": "confirmed" },
-        { "name": "Aris", "status": "late" }
-      ]
+        {
+          "user_id": "...",
+          "user_name": "Ars Dev",
+          "slot_order": 1,
+          "status": "confirmed",
+          "confirmed_by_name": "Ars Dev",
+          "confirmed_at": "2026-06-02T19:35:17.433+00:00"
+        }
+      ],
+      "paid_count": 5,
+      "member_count": 6,
+      "total_collected": 1000000
     }
-  ]
+  ],
+  "summary": {
+    "total_collected": 1000000,
+    "total_expected": 1200000,
+    "collection_rate": 83
+  }
 }
 ```
 
@@ -457,64 +490,85 @@ Ketua selesaikan hutang anggota kabur.
 ```json
 { "mode": "kick_writeoff" }
 ```
-> `kick_writeoff` — kick + catat kerugian  
-> `netting` — offset hutang dengan iuran yang sudah dibayar
+> `kick_writeoff` — tandai semua hutang sebagai `late` + kick dari grup  
+> `netting` — tandai semua hutang sebagai `confirmed` (offset saling hapus) + kick dari grup
 
 **Response 200:**
 ```json
-{ "message": "Hutang anggota berhasil diselesaikan", "mode": "kick_writeoff" }
+{ "message": "Hutang berhasil diselesaikan", "mode": "kick_writeoff", "total_resolved": 400000 }
 ```
+> `total_resolved` — total nominal yang diselesaikan (dalam rupiah)
 
 ---
 
 ### GET `/api/groups/:id/activity-log`
 Log aktivitas grup (buat grup, join, undian, dsb). **Hanya anggota.**
 
-**Query:** `?limit=20&offset=0`
+**Query:** `?limit=30&offset=0`  
+> `limit` dibatasi [1, 100], default 30
 
 **Response 200:**
 ```json
 {
-  "logs": [
+  "entries": [
     {
       "id": "...",
-      "action": "undian",
-      "description": "Undian mode random: pemenang Ars Dev",
-      "actor_id": "...",
+      "icon": "sparkles",
+      "tone": "mint",
+      "text": "Undian mode random: pemenang Ars Dev",
       "created_at": "..."
     }
-  ]
+  ],
+  "has_more": false
 }
 ```
+
+**Icon/tone mapping:**
+| Action | Icon | Tone |
+|--------|------|------|
+| `group_created`, `member_joined` | `users` | `mint` |
+| `member_left` | `users` | `neutral` |
+| `payment_confirmed` | `checkCircle` | `mint` |
+| `payment_cancelled` | `checkCircle` | `amber` |
+| `undian` | `sparkles` | `mint` |
+| `urutan_updated` | `swap` | `blue` |
+| `group_disbanded` | `alert` | `amber` |
+| `period_closed`, `tanggal_updated` | `checkCircle` | `blue` |
+| `invite_regenerated` | `share` | `blue` |
 
 ---
 
 ### DELETE `/api/groups/:id/members/:memberId`
-Ketua kick anggota. **Hanya saat masih recruiting.**
+Ketua kick anggota. **Bisa dilakukan kapan saja** (recruiting maupun active).
+
+> Jika grup sudah active, payment pending anggota tersebut otomatis ditandai `late` sebelum dihapus.
 
 **Response 200:**
 ```json
-{ "message": "Anggota berhasil dikeluarkan" }
+{ "message": "Anggota berhasil dikeluarkan dari grup", "was_active": false }
 ```
+> `was_active: true` berarti kick dilakukan saat arisan sedang berjalan
 
 ---
 
 ### DELETE `/api/groups/:id/leave`
-User keluar dari grup. **Tidak bisa jika sudah active.**
+User keluar dari grup. **Tidak bisa jika sudah active.** Ketua tidak bisa keluar — harus bubarkan dulu.
 
 **Response 200:**
 ```json
-{ "message": "Berhasil keluar dari grup" }
+{ "message": "Kamu keluar dari grup \"Arisan Kantor\"" }
 ```
 
 ---
 
 ### DELETE `/api/groups/:id`
-Ketua hapus grup. **Hanya jika masih recruiting.**
+Ketua bubarkan grup. **Hanya jika masih recruiting** (tidak bisa saat active).
+
+> Grup tidak dihapus fisik — status berubah menjadi `disbanded`.
 
 **Response 200:**
 ```json
-{ "message": "Grup berhasil dihapus" }
+{ "message": "Grup \"Arisan Kantor\" berhasil dibubarkan" }
 ```
 
 ---
@@ -806,8 +860,9 @@ Daftar notifikasi user dengan cursor pagination.
 | `payment_confirmed` | Ketua konfirmasi iuran |
 | `undian_done` | Undian selesai |
 | `swap_request` | Ada permintaan tukar giliran |
-| `swap_approved` | Swap disetujui/ditolak |
+| `swap_approved` | Swap disetujui/ditolak oleh ketua |
 | `payment_late` | Iuran keterlambatan (notif ke ketua) |
+| `kabur_resolved` | Ketua selesaikan hutang anggota kabur |
 
 ---
 
@@ -833,7 +888,8 @@ Tandai satu notifikasi sebagai sudah dibaca.
 
 ## 8. Cron (Internal)
 
-Semua endpoint ini dilindungi header `X-Cron-Secret`.  
+Semua endpoint `/api/cron/*` dilindungi header `X-Cron-Secret`.  
+`/api/payments/cron/mark-late` dilindungi HMAC signature (`X-Cron-Signature` + `X-Cron-Timestamp`).  
 Dipanggil otomatis via GitHub Actions setiap jam 08:00 WIB.
 
 ### GET `/api/cron/payment-reminder`
@@ -841,6 +897,14 @@ Kirim reminder ke anggota yang belum bayar (jatuh tempo hari ini / 3 hari lagi).
 
 ### GET `/api/cron/pelaksanaan-reminder`
 Kirim reminder pelaksanaan arisan ke semua anggota (7 hari sebelum tanggal pelaksanaan).
+
+### GET `/api/cron/cleanup`
+Hapus data kadaluarsa: OTP lama, `notif_log` lama, notifications lama (>30 hari jika sudah dibaca, >90 hari).
+
+**Response 200:**
+```json
+{ "ok": true, "otp_deleted": 5, "notif_log_deleted": 12, "notifications_deleted": 3 }
+```
 
 ### GET `/api/payments/cron/mark-late`
 Tandai payment `pending` yang sudah melewati jatuh tempo menjadi `late`.

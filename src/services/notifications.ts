@@ -33,6 +33,39 @@ export async function sendExpoPush(
   }
 }
 
+// Batch push ke banyak user sekaligus — satu round-trip ke Expo API
+export async function sendExpoPushBatch(
+  userIds: string[],
+  title: string,
+  body: string,
+  data?: Record<string, unknown>
+): Promise<void> {
+  if (!userIds.length) return;
+
+  const { data: tokens } = await supabase
+    .from('push_tokens')
+    .select('user_id, expo_push_token')
+    .in('user_id', userIds);
+
+  if (!tokens?.length) return;
+
+  const messages = tokens
+    .filter((t) => Expo.isExpoPushToken(t.expo_push_token))
+    .map((t) => ({ to: t.expo_push_token, title, body, data }));
+
+  if (!messages.length) return;
+
+  try {
+    // Expo SDK chunks automatically for payloads > 100 messages
+    const chunks = expo.chunkPushNotifications(messages);
+    for (const chunk of chunks) {
+      await expo.sendPushNotificationsAsync(chunk);
+    }
+  } catch (err) {
+    logger.error('Expo batch push failed', { count: messages.length, err });
+  }
+}
+
 // sendWA(userId) — ambil phone dari DB supaya caller tidak perlu tahu nomor HP
 export async function sendWA(userId: string, message: string): Promise<void> {
   try {
@@ -71,7 +104,7 @@ export async function insertNotification(
 ): Promise<void> {
   const { error } = await supabase
     .from('notifications')
-    .insert({ user_id: userId, type, title, body, data: data ?? null });
+    .insert({ user_id: userId, type, title, body, data: (data ?? undefined) as never });
   if (error) logger.error('insertNotification failed', { userId, type, error });
 }
 

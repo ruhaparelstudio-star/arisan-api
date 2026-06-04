@@ -48,9 +48,19 @@ export async function removeMemberFromChannel(groupId: string, userId: string): 
   }
 }
 
+export async function archiveGroupChannel(groupId: string): Promise<void> {
+  try {
+    const client = getClient();
+    const channel = client.channel('messaging', `group-${groupId}`);
+    await channel.delete();
+  } catch (err) {
+    logger.error('Stream archiveGroupChannel failed', { groupId, err });
+  }
+}
+
 export async function sendSystemMessage(groupId: string, text: string): Promise<void> {
-  // Tulis ke Supabase messages table agar tampil di ChatScreen mobile
-  // user_id null = system message (tidak ada FK constraint violation)
+  // Mobile ChatScreen hanya baca dari Supabase messages table.
+  // Stream.io dihapus dari path ini (GAP-20) — duplikasi tanpa manfaat.
   try {
     await supabase.from('messages').insert({
       group_id: groupId,
@@ -59,15 +69,5 @@ export async function sendSystemMessage(groupId: string, text: string): Promise<
     });
   } catch (err) {
     logger.error('Supabase sendSystemMessage failed', { groupId, err });
-  }
-
-  // Tetap kirim ke Stream.io (best-effort, tidak block)
-  try {
-    const client = getClient();
-    const channel = client.channel('messaging', `group-${groupId}`);
-    await channel.sendMessage({ text, user_id: 'system-bot' });
-    logger.info('Stream system message sent', { groupId, text });
-  } catch (err) {
-    logger.error('Stream sendSystemMessage failed', { groupId, err });
   }
 }
